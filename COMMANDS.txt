@@ -1,0 +1,105 @@
+# Quick Reference Commands
+
+## Phase 1: Data Collection & Training
+
+# Collect training data
+python batch_collect_data.py --data-dir ./tcav_data --samples-per-motif 100
+
+# Check window sizes
+python check_window_sizes.py --data-dir ./tcav_data
+
+# Train CAVs
+python batch_train_cavs.py \
+    --data-dir ./tcav_data \
+    --output-dir ./tcav_outputs_650m \
+    --model-name esm2_t33_650M_UR50D \
+    --layers 22 \
+    --device cuda
+
+## Phase 2: Test Detection
+
+# Collect test data
+python collect_test_data.py
+
+# (Optional) Create small test set
+python create_small_test_set.py \
+    --input-dir ./test_data \
+    --output-dir ./test_data_small \
+    --n-samples 10
+
+# Run detection (on-the-fly embedding)
+python run_test_detection_onthefly.py \
+    --test-data-dir ./test_data \
+    --tcav-dir ./tcav_outputs_650m \
+    --data-dir ./tcav_data \
+    --model-name esm2_t33_650M_UR50D \
+    --layers 22 \
+    --rank-by score \
+    --rank-by-layer 22 \
+    --device cuda \
+    --output-file test_detection_results.json
+
+## Phase 3: Post-Processing & Evaluation
+
+# Step 1: Remove duplicates/overlaps (NMS)
+python preprocess_detections.py \
+    --input test_detection_results.json \
+    --output test_detection_results_cleaned.json \
+    --iou-threshold 0.3
+
+# Step 2: Expand intervals to maximize scores
+python expand_intervals.py \
+    --detection-results test_detection_results_cleaned.json \
+    --test-data-dir ./test_data \
+    --tcav-dir ./tcav_outputs_650m \
+    --model-name esm2_t33_650M_UR50D \
+    --layer 22 \
+    --expansion-step 5 \
+    --device cuda \
+    --output expanded_predictions.json
+
+# Step 3: Evaluate
+python evaluate_metrics.py \
+    --detection-results expanded_predictions.json \
+    --output-dir ./evaluation_results \
+    --k-max 20 \
+    --overlap-thresholds 80.0 85.0 90.0 95.0 100.0
+
+## HPC Commands (from user's history)
+
+# Run detection on small test set
+python run_test_detection_onthefly.py \
+    --test-data-dir ./test_data_small \
+    --tcav-dir ./tcav_outputs_650m \
+    --data-dir ./tcav_data \
+    --model-name esm2_t33_650M_UR50D \
+    --layers 22 \
+    --rank-by score \
+    --device cuda
+
+# Alternative: With pre-computed embeddings
+python generate_test_embeddings.py \
+    --test-data-dir ./test_data \
+    --output-dir ./test_data/embeddings \
+    --model-name esm2_t33_650M_UR50D \
+    --layers 22 \
+    --device cuda \
+    --batch-size 4 \
+    --resume
+
+python run_test_detection.py \
+    --embeddings-dir ./test_data/embeddings \
+    --tcav-dir ./tcav_outputs_650m \
+    --data-dir ./tcav_data \
+    --layers 22 \
+    --rank-by-layer 22 \
+    --rank-by score \
+    --output-file ./test_results.json
+
+python evaluate_metrics.py \
+    --detection-results ./test_results.json \
+    --embeddings-dir ./test_data/embeddings \
+    --output-dir ./evaluation_tables \
+    --k-max 20 \
+    --overlap-thresholds 80.0 85.0 90.0 95.0 100.0
+
