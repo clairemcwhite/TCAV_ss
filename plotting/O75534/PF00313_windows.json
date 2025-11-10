@@ -1,0 +1,451 @@
+{
+  "motif_id": "PF00313",
+  "motif_name": "'Cold-shock' DNA-binding domain",
+  "protein": "sp|O75534|CSDE1_HUMAN Cold shock domain-containing protein E1 OS=Homo sapiens OX=9606 GN=CSDE1 PE=1 SV=2",
+  "protein_length": 798,
+  "window_length": 72,
+  "n_windows": 21,
+  "windows": [
+    {
+      "motif_id": "PF00313",
+      "motif_name": "'Cold-shock' DNA-binding domain",
+      "window_length": 72,
+      "span": [
+        36,
+        108
+      ],
+      "sequence": "YGFIQCSERQARLFFHCSQYNGNLQDLKVGDDVEFEVSSDRRTGKPIAVKLVKIKQEILPEERMNGQVVCAV",
+      "zmean": 1.7679880970437198,
+      "per_layer_scores": {
+        "L11": 4.863393431976954,
+        "L22": 13.198925521785899,
+        "L33": 6.3375076962066315
+      },
+      "per_layer_zscores": {
+        "L11": 1.5216553063965466,
+        "L22": 1.2556806283650337,
+        "L33": 2.5266283563695797
+      }
+    },
+    {
+      "motif_id": "PF00313",
+      "motif_name": "'Cold-shock' DNA-binding domain",
+      "window_length": 72,
+      "span": [
+        360,
+        432
+      ],
+      "sequence": "GFIKCVDRDVRMFFHFSEILDGNQLHIADEVEFTVVPDMLSAQRNHAIRIKKLPKGTVSFHSHSDHRFLGTV",
+      "zmean": 0.2730160941845258,
+      "per_layer_scores": {
+        "L11": -2.0117504435937867,
+        "L22": 9.945699541627139,
+        "L33": -4.9724349192235575
+      },
+      "per_layer_zscores": {
+        "L11": 0.392635965754932,
+        "L22": 0.8405629094548204,
+        "L33": -0.4141505926561751
+      }
+    },
+    {
+      "motif_id": "PF00313",
+      "motif_name": "'Cold-shock' DNA-binding domain",
+      "window_length": 72,
+      "span": [
+        180,
+        252
+      ],
+      "sequence": "KKQARCQGVVCAMKEAFGFIERGDVVKEIFFHYSEFKGDLETLQPGDDVEFTIKDRNGKEVATDVRLLPQGT",
+      "zmean": 0.9038043737738358,
+      "per_layer_scores": {
+        "L11": 2.3234771623113093,
+        "L22": 9.367262166418183,
+        "L33": -0.14869895278562234
+      },
+      "per_layer_zscores": {
+        "L11": 1.1045564581452056,
+        "L22": 0.766753218645258,
+        "L33": 0.8401034445310436
+      }
+    },
+    {
+      "motif_id": "PF00313",
+      "motif_name": "'Cold-shock' DNA-binding domain",
+      "window_length": 72,
+      "span": [
+        612,
+        684
+      ],
+      "sequence": "TEYQGMIEIVEEGDMKGEVYPFGIVGMANKGDCLQKGESVKFQLCVLGQNAQTMAYNITPLRRATVECVKDQ",
+      "zmean": 0.33544363415968287,
+      "per_layer_scores": {
+        "L11": -3.912768226210819,
+        "L22": 8.862991211441006,
+        "L33": -2.5202168743192592
+      },
+      "per_layer_zscores": {
+        "L11": 0.08045546708862708,
+        "L22": 0.7024073017555298,
+        "L33": 0.22346813363489174
+      }
+    },
+    {
+      "motif_id": "PF00313",
+      "motif_name": "'Cold-shock' DNA-binding domain",
+      "window_length": 72,
+      "span": [
+        684,
+        756
+      ],
+      "sequence": "FGFINYEVGDSKKLFFHVKEVQDGIELQAGDEVEFSVILNQRTGKCSACNVWRVCEGPKAVAAPRPDRLVNR",
+      "zmean": 0.6791993011750348,
+      "per_layer_scores": {
+        "L11": 0.30707802733622375,
+        "L22": 8.324603066128113,
+        "L33": -0.9549605050561258
+      },
+      "per_layer_zscores": {
+        "L11": 0.7734283155140226,
+        "L22": 0.6337079675765737,
+        "L33": 0.6304616204345083
+      }
+    },
+    {
+      "motif_id": "PF00313",
+      "motif_name": "'Cold-shock' DNA-binding domain",
+      "window_length": 72,
+      "span": [
+        504,
+        576
+      ],
+      "sequence": "TCVRLLGRNSNSKRLLGYVATLKDNFGFIETANHDKEIFFHYSEFSGDVDSLELGDMVEYSLSKGKGNKVSA",
+      "zmean": 0.9168615160901318,
+      "per_layer_scores": {
+        "L11": 4.052863121330255,
+        "L22": 8.283958912584644,
+        "L33": -0.5586434319759629
+      },
+      "per_layer_zscores": {
+        "L11": 1.3885519978028174,
+        "L22": 0.6285216975759949,
+        "L33": 0.7335108528915832
+      }
+    },
+    {
+      "motif_id": "PF00313",
+      "motif_name": "'Cold-shock' DNA-binding domain",
+      "window_length": 72,
+      "span": [
+        288,
+        360
+      ],
+      "sequence": "VDFVIPKELPFGDKDTKSKVTLLEGDHVRFNISTDRRDKLERATNIEVLSNTFQFTNEAREMGVIAAMRDGF",
+      "zmean": 0.17734641276475593,
+      "per_layer_scores": {
+        "L11": -5.38923799661544,
+        "L22": 7.5253458591240125,
+        "L33": -2.75536812114544
+      },
+      "per_layer_zscores": {
+        "L11": -0.1620067936042253,
+        "L22": 0.5317212532758663,
+        "L33": 0.1623247786226268
+      }
+    },
+    {
+      "motif_id": "PF00313",
+      "motif_name": "'Cold-shock' DNA-binding domain",
+      "window_length": 72,
+      "span": [
+        648,
+        720
+      ],
+      "sequence": "GESVKFQLCVLGQNAQTMAYNITPLRRATVECVKDQFGFINYEVGDSKKLFFHVKEVQDGIELQAGDEVEFS",
+      "zmean": 0.2576749400027247,
+      "per_layer_scores": {
+        "L11": -3.553830015711863,
+        "L22": 6.7837450069858285,
+        "L33": -2.6238036408440526
+      },
+      "per_layer_zscores": {
+        "L11": 0.13939942362000526,
+        "L22": 0.4370915976789163,
+        "L33": 0.1965337987092524
+      }
+    },
+    {
+      "motif_id": "PF00313",
+      "motif_name": "'Cold-shock' DNA-binding domain",
+      "window_length": 72,
+      "span": [
+        540,
+        612
+      ],
+      "sequence": "EIFFHYSEFSGDVDSLELGDMVEYSLSKGKGNKVSAEKVNKTHSVNGITEEADPTIYSGKVIRPLRSVDPTQ",
+      "zmean": 0.20474492635989194,
+      "per_layer_scores": {
+        "L11": -4.127194567433651,
+        "L22": 6.774312076240446,
+        "L33": -2.8677485370581315
+      },
+      "per_layer_zscores": {
+        "L11": 0.0452428968842692,
+        "L22": 0.435887938075328,
+        "L33": 0.1331039441200787
+      }
+    },
+    {
+      "motif_id": "PF00313",
+      "motif_name": "'Cold-shock' DNA-binding domain",
+      "window_length": 72,
+      "span": [
+        108,
+        180
+      ],
+      "sequence": "PHNLESKSPAAPGQSPTGSVCYERNGEVFYLTYTPEDVEGNVQLETGDKINFVIDNNKHTGAVSARNIMLLK",
+      "zmean": 0.5122134809587991,
+      "per_layer_scores": {
+        "L11": -2.6091606423806737,
+        "L22": 6.687427045389824,
+        "L33": -0.23636613022790554
+      },
+      "per_layer_zscores": {
+        "L11": 0.2945307215689033,
+        "L22": 0.4248012456555184,
+        "L33": 0.817308475651976
+      }
+    },
+    {
+      "motif_id": "PF00313",
+      "motif_name": "'Cold-shock' DNA-binding domain",
+      "window_length": 72,
+      "span": [
+        468,
+        540
+      ],
+      "sequence": "TIAFQAKDVEGSTSPQIGDKVEFSISDKQRPGQQVATCVRLLGRNSNSKRLLGYVATLKDNFGFIETANHDK",
+      "zmean": 0.39533750664846856,
+      "per_layer_scores": {
+        "L11": -3.199585406169639,
+        "L22": 6.498171269329839,
+        "L33": -1.1190787759307315
+      },
+      "per_layer_zscores": {
+        "L11": 0.19757260846233787,
+        "L22": 0.40065185470396536,
+        "L33": 0.5877880567791025
+      }
+    },
+    {
+      "motif_id": "PF00313",
+      "motif_name": "'Cold-shock' DNA-binding domain",
+      "window_length": 72,
+      "span": [
+        144,
+        216
+      ],
+      "sequence": "DVEGNVQLETGDKINFVIDNNKHTGAVSARNIMLLKKKQARCQGVVCAMKEAFGFIERGDVVKEIFFHYSEF",
+      "zmean": -0.01976500028692693,
+      "per_layer_scores": {
+        "L11": -5.3227717894014495,
+        "L22": 6.147301098007221,
+        "L33": -4.395291037063709
+      },
+      "per_layer_zscores": {
+        "L11": -0.15109187534188442,
+        "L22": 0.3558801646826122,
+        "L33": -0.26408329020150856
+      }
+    },
+    {
+      "motif_id": "PF00313",
+      "motif_name": "'Cold-shock' DNA-binding domain",
+      "window_length": 72,
+      "span": [
+        324,
+        396
+      ],
+      "sequence": "RDKLERATNIEVLSNTFQFTNEAREMGVIAAMRDGFGFIKCVDRDVRMFFHFSEILDGNQLHIADEVEFTVV",
+      "zmean": 0.4195862188796675,
+      "per_layer_scores": {
+        "L11": 0.7591758036272783,
+        "L22": 5.908390739330328,
+        "L33": -3.0500855623088334
+      },
+      "per_layer_zscores": {
+        "L11": 0.8476707084779508,
+        "L22": 0.3253947561303503,
+        "L33": 0.0856931920307016
+      }
+    },
+    {
+      "motif_id": "PF00313",
+      "motif_name": "'Cold-shock' DNA-binding domain",
+      "window_length": 72,
+      "span": [
+        432,
+        504
+      ],
+      "sequence": "EKEATFSNPKTTSPNKGKEKEAEDGIIAYDDCGVKLTIAFQAKDVEGSTSPQIGDKVEFSISDKQRPGQQVA",
+      "zmean": 0.133800158223664,
+      "per_layer_scores": {
+        "L11": -7.819557044965184,
+        "L22": 5.196178339951727,
+        "L33": -0.5798637503230222
+      },
+      "per_layer_zscores": {
+        "L11": -0.5611078537676828,
+        "L22": 0.2345151220647245,
+        "L33": 0.7279932063739504
+      }
+    },
+    {
+      "motif_id": "PF00313",
+      "motif_name": "'Cold-shock' DNA-binding domain",
+      "window_length": 72,
+      "span": [
+        216,
+        288
+      ],
+      "sequence": "KGDLETLQPGDDVEFTIKDRNGKEVATDVRLLPQGTVIFEDISIEHFEGTVTKVIPKVPSKNQNDPLPGRIK",
+      "zmean": -0.2639191766508091,
+      "per_layer_scores": {
+        "L11": -6.636103545632485,
+        "L22": 3.585546099864839,
+        "L33": -5.125649294224579
+      },
+      "per_layer_zscores": {
+        "L11": -0.36676400967093725,
+        "L22": 0.02899543619418203,
+        "L33": -0.4539889564756721
+      }
+    },
+    {
+      "motif_id": "PF00313",
+      "motif_name": "'Cold-shock' DNA-binding domain",
+      "window_length": 72,
+      "span": [
+        252,
+        324
+      ],
+      "sequence": "VIFEDISIEHFEGTVTKVIPKVPSKNQNDPLPGRIKVDFVIPKELPFGDKDTKSKVTLLEGDHVRFNISTDR",
+      "zmean": -0.3380314369181254,
+      "per_layer_scores": {
+        "L11": -8.654573099643535,
+        "L22": 3.2553156961649794,
+        "L33": -4.543882349135037
+      },
+      "per_layer_zscores": {
+        "L11": -0.6982321514609949,
+        "L22": -0.01314258088017895,
+        "L33": -0.3027195784132024
+      }
+    },
+    {
+      "motif_id": "PF00313",
+      "motif_name": "'Cold-shock' DNA-binding domain",
+      "window_length": 72,
+      "span": [
+        0,
+        72
+      ],
+      "sequence": "MSFDPNLLHNNGHNGYPNGTSAALRETGVIEKLLTSYGFIQCSERQARLFFHCSQYNGNLQDLKVGDDVEFE",
+      "zmean": 0.5588039460216604,
+      "per_layer_scores": {
+        "L11": 5.3002239365412205,
+        "L22": 2.248336756235819,
+        "L33": -2.5156474220505842
+      },
+      "per_layer_zscores": {
+        "L11": 1.5933905452746346,
+        "L22": -0.14163497676151834,
+        "L33": 0.22465626955186485
+      }
+    },
+    {
+      "motif_id": "PF00313",
+      "motif_name": "'Cold-shock' DNA-binding domain",
+      "window_length": 72,
+      "span": [
+        576,
+        648
+      ],
+      "sequence": "EKVNKTHSVNGITEEADPTIYSGKVIRPLRSVDPTQTEYQGMIEIVEEGDMKGEVYPFGIVGMANKGDCLQK",
+      "zmean": -1.583318097513305,
+      "per_layer_scores": {
+        "L11": -13.902917892964442,
+        "L22": -9.824270664937536,
+        "L33": -9.178230407230133
+      },
+      "per_layer_zscores": {
+        "L11": -1.560102518868123,
+        "L22": -1.682122260627187,
+        "L33": -1.507729513044605
+      }
+    },
+    {
+      "motif_id": "PF00313",
+      "motif_name": "'Cold-shock' DNA-binding domain",
+      "window_length": 72,
+      "span": [
+        720,
+        792
+      ],
+      "sequence": "VILNQRTGKCSACNVWRVCEGPKAVAAPRPDRLVNRLKNITLDDASAPRLMVLRQPRGPDNSMGFGAERKIR",
+      "zmean": -1.573941832934448,
+      "per_layer_scores": {
+        "L11": -13.704518013093255,
+        "L22": -12.085899250182957,
+        "L33": -8.08547134827429
+      },
+      "per_layer_zscores": {
+        "L11": -1.5275217750161336,
+        "L22": -1.9707102975650317,
+        "L33": -1.223593426222178
+      }
+    },
+    {
+      "motif_id": "PF00313",
+      "motif_name": "'Cold-shock' DNA-binding domain",
+      "window_length": 72,
+      "span": [
+        396,
+        468
+      ],
+      "sequence": "PDMLSAQRNHAIRIKKLPKGTVSFHSHSDHRFLGTVEKEATFSNPKTTSPNKGKEKEAEDGIIAYDDCGVKL",
+      "zmean": -1.8583633716884458,
+      "per_layer_scores": {
+        "L11": -14.736909087456407,
+        "L22": -12.4388681078023,
+        "L33": -10.541803207135246
+      },
+      "per_layer_zscores": {
+        "L11": -1.6970585165239633,
+        "L22": -2.01574978388259,
+        "L33": -1.862281814658784
+      }
+    },
+    {
+      "motif_id": "PF00313",
+      "motif_name": "'Cold-shock' DNA-binding domain",
+      "window_length": 72,
+      "span": [
+        72,
+        144
+      ],
+      "sequence": "VSSDRRTGKPIAVKLVKIKQEILPEERMNGQVVCAVPHNLESKSPAAPGQSPTGSVCYERNGEVFYLTYTPE",
+      "zmean": -1.8984816902945034,
+      "per_layer_scores": {
+        "L11": -14.482042335052862,
+        "L22": -13.719910526018843,
+        "L33": -10.536977153657904
+      },
+      "per_layer_zscores": {
+        "L11": -1.6552049207363067,
+        "L22": -2.1792131921181666,
+        "L33": -1.8610269580290364
+      }
+    }
+  ]
+}

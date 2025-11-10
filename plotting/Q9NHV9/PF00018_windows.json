@@ -1,0 +1,577 @@
+{
+  "motif_id": "PF00018",
+  "motif_name": "SH3 domain",
+  "protein": "sp|Q9NHV9|VAV_DROME Protein vav OS=Drosophila melanogaster OX=7227 GN=Vav PE=1 SV=2",
+  "protein_length": 793,
+  "window_length": 56,
+  "n_windows": 27,
+  "windows": [
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        728,
+        784
+      ],
+      "sequence": "VIATALYDYEPKAGSNQLQLRTDCQVLVIGKDGDSKGWWRGKIGDTVGYFPKEYVQ",
+      "zmean": 4.213758431084174,
+      "per_layer_scores": {
+        "L11": 14.955695172673355,
+        "L22": 13.353748703024461,
+        "L33": 8.277836397381865
+      },
+      "per_layer_zscores": {
+        "L11": 4.545040518418221,
+        "L22": 3.893578740940955,
+        "L33": 4.202656033893347
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        700,
+        756
+      ],
+      "sequence": "ELVSYYERNDLGENFAGLNQSLQWPYKEVIATALYDYEPKAGSNQLQLRTDCQVLV",
+      "zmean": 2.1305564096247784,
+      "per_layer_scores": {
+        "L11": -2.6311861439608535,
+        "L22": 5.303629189499848,
+        "L33": -0.051176912163403865
+      },
+      "per_layer_zscores": {
+        "L11": 1.9912080895938966,
+        "L22": 2.6255284964382377,
+        "L33": 1.7749326428422016
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        616,
+        672
+      ],
+      "sequence": "LSEFNWFAGNMDRETAAHRLENRRIGTYLLRVRPQGPSTAHETMYALSLKTDDNVI",
+      "zmean": 0.6196184001704674,
+      "per_layer_scores": {
+        "L11": -15.630444710212622,
+        "L22": -6.961551180173801,
+        "L33": -2.4978695794380905
+      },
+      "per_layer_zscores": {
+        "L11": 0.10355515787333362,
+        "L22": 0.6935242646370837,
+        "L33": 1.0617757780009849
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        420,
+        476
+      ],
+      "sequence": "NGNGSDLLQYGRLLLDGELHIKAHEDQKTKLRYAFVFDKILIMVKALHIKTGDMQY",
+      "zmean": 0.19744986158492564,
+      "per_layer_scores": {
+        "L11": -17.81966238198065,
+        "L22": -8.467662051568196,
+        "L33": -4.938405940961058
+      },
+      "per_layer_zscores": {
+        "L11": -0.21434629283063142,
+        "L22": 0.4562825372923829,
+        "L33": 0.3504133402930255
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        672,
+        728
+      ],
+      "sequence": "KHMKINQENSGDSMLYCLSSRRHFKTIVELVSYYERNDLGENFAGLNQSLQWPYKE",
+      "zmean": 0.05392049296146086,
+      "per_layer_scores": {
+        "L11": -18.76945689480111,
+        "L22": -9.387065161764708,
+        "L33": -5.445622266766092
+      },
+      "per_layer_zscores": {
+        "L11": -0.35226818949266614,
+        "L22": 0.3114586826002184,
+        "L33": 0.2025709857768303
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        588,
+        644
+      ],
+      "sequence": "SVHKGCISSTGRCKQNPVSVPPPVCDRQLSEFNWFAGNMDRETAAHRLENRRIGTY",
+      "zmean": -0.02824113522861928,
+      "per_layer_scores": {
+        "L11": -16.26215301794988,
+        "L22": -10.581141188603375,
+        "L33": -6.895084442807141
+      },
+      "per_layer_zscores": {
+        "L11": 0.011823307705489354,
+        "L22": 0.12336850639305051,
+        "L33": -0.2199152197843977
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        532,
+        588
+      ],
+      "sequence": "RKALTEAMESLEPPGCQSTDHKMEIYTFDAPTTCRHCSKFLKGRIHQGYRCKVCQI",
+      "zmean": 0.16805832142041124,
+      "per_layer_scores": {
+        "L11": -15.692461096442779,
+        "L22": -10.788820505134154,
+        "L33": -5.0462802122898776
+      },
+      "per_layer_zscores": {
+        "L11": 0.09454961246584462,
+        "L22": 0.09065497864199368,
+        "L33": 0.31897037315339544
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        476,
+        532
+      ],
+      "sequence": "TYRDSHNLADYRVEQSHSRRTIGRDTRFKYQLLLARKSGKTAFTLYLKSEHERDKW",
+      "zmean": -0.13031734174250928,
+      "per_layer_scores": {
+        "L11": -18.27902742911283,
+        "L22": -11.542191302998633,
+        "L33": -6.421530451027782
+      },
+      "per_layer_zscores": {
+        "L11": -0.2810517724954646,
+        "L22": -0.028015560699476527,
+        "L33": -0.08188469203258672
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        448,
+        504
+      ],
+      "sequence": "TKLRYAFVFDKILIMVKALHIKTGDMQYTYRDSHNLADYRVEQSHSRRTIGRDTRF",
+      "zmean": -0.17055966394135835,
+      "per_layer_scores": {
+        "L11": -17.983122042878886,
+        "L22": -11.856071820174149,
+        "L33": -6.813511454935613
+      },
+      "per_layer_zscores": {
+        "L11": -0.23808265491159397,
+        "L22": -0.07745784113771904,
+        "L33": -0.19613849577476203
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        560,
+        616
+      ],
+      "sequence": "DAPTTCRHCSKFLKGRIHQGYRCKVCQISVHKGCISSTGRCKQNPVSVPPPVCDRQ",
+      "zmean": -0.1141149113684617,
+      "per_layer_scores": {
+        "L11": -15.762160731799364,
+        "L22": -12.00097427910043,
+        "L33": -7.260721360951554
+      },
+      "per_layer_zscores": {
+        "L11": 0.08442836436925807,
+        "L22": -0.10028279400479335,
+        "L33": -0.32649030446984983
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        28,
+        84
+      ],
+      "sequence": "TRCKVIPPDHKAAQPDAEIRILAMTLRDGVLLCNLVIHLDPSSLDPREFNRKPQMA",
+      "zmean": -0.4124558918493085,
+      "per_layer_scores": {
+        "L11": -18.59357775612088,
+        "L22": -12.353104354276553,
+        "L33": -8.730468699098921
+      },
+      "per_layer_zscores": {
+        "L11": -0.3267283658122489,
+        "L22": -0.15575012305173108,
+        "L33": -0.7548891866839456
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        140,
+        196
+      ],
+      "sequence": "LHPDLIGFNLQLSPTERSHSDEAIYKDLHSTTTDNIACNGTGYDHTNTKEEEVYQD",
+      "zmean": -0.13138479436257258,
+      "per_layer_scores": {
+        "L11": -18.259904312803467,
+        "L22": -12.818401538393523,
+        "L33": -5.752359193859929
+      },
+      "per_layer_zscores": {
+        "L11": -0.2782748597676327,
+        "L22": -0.22904347069640713,
+        "L33": 0.11316394737632206
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        504,
+        560
+      ],
+      "sequence": "KYQLLLARKSGKTAFTLYLKSEHERDKWRKALTEAMESLEPPGCQSTDHKMEIYTF",
+      "zmean": -0.40033028489547157,
+      "per_layer_scores": {
+        "L11": -18.201695098562766,
+        "L22": -13.524463707934032,
+        "L33": -8.167878976115443
+      },
+      "per_layer_zscores": {
+        "L11": -0.2698221627653688,
+        "L22": -0.3402619818273008,
+        "L33": -0.5909067100937452
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        644,
+        700
+      ],
+      "sequence": "LLRVRPQGPSTAHETMYALSLKTDDNVIKHMKINQENSGDSMLYCLSSRRHFKTIV",
+      "zmean": -0.4321596841712317,
+      "per_layer_scores": {
+        "L11": -18.520757075635437,
+        "L22": -13.623645047277972,
+        "L33": -8.282925324110048
+      },
+      "per_layer_zscores": {
+        "L11": -0.3161539034067467,
+        "L22": -0.35588496995733965,
+        "L33": -0.6244401791496088
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        196,
+        252
+      ],
+      "sequence": "LCALHRTSRSQTASSTSFEQRDYVIRELIDTESNYLDVLTALKTKFMGPLERHLNQ",
+      "zmean": -0.08046378758572924,
+      "per_layer_scores": {
+        "L11": -17.45193529389406,
+        "L22": -13.723736610296868,
+        "L33": -5.141527989512766
+      },
+      "per_layer_zscores": {
+        "L11": -0.16094777687974318,
+        "L22": -0.3716513360026557,
+        "L33": 0.2912077501252112
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        56,
+        112
+      ],
+      "sequence": "GVLLCNLVIHLDPSSLDPREFNRKPQMAQFLCSKNIKLFLDVCHNNFGIRDADLFE",
+      "zmean": -0.49550161219165156,
+      "per_layer_scores": {
+        "L11": -19.65633722365241,
+        "L22": -13.787917383630184,
+        "L33": -8.280350285429986
+      },
+      "per_layer_zscores": {
+        "L11": -0.48105416942445667,
+        "L22": -0.3817610548932827,
+        "L33": -0.6236896122572154
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        0,
+        56
+      ],
+      "sequence": "MASSSSSNSFGGVAGVNGDLWRECVAWLTRCKVIPPDHKAAQPDAEIRILAMTLRD",
+      "zmean": -0.5324570494211224,
+      "per_layer_scores": {
+        "L11": -18.847661342436613,
+        "L22": -14.144466905014744,
+        "L33": -8.870901254016237
+      },
+      "per_layer_zscores": {
+        "L11": -0.3636244413973708,
+        "L22": -0.4379245325918968,
+        "L33": -0.7958221742740994
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        336,
+        392
+      ],
+      "sequence": "YNVGKLQLRDILSVPMQRILKYHLLLDKLVKETSPLHDDYRSLERAKEAMIDVSQY",
+      "zmean": -0.32232562606072435,
+      "per_layer_scores": {
+        "L11": -18.225145221354744,
+        "L22": -14.260375147417276,
+        "L33": -6.9556444871075715
+      },
+      "per_layer_zscores": {
+        "L11": -0.27322741028867026,
+        "L22": -0.4561823329725598,
+        "L33": -0.23756713492094295
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        168,
+        224
+      ],
+      "sequence": "HSTTTDNIACNGTGYDHTNTKEEEVYQDLCALHRTSRSQTASSTSFEQRDYVIREL",
+      "zmean": -0.4785981229033475,
+      "per_layer_scores": {
+        "L11": -18.68423313701328,
+        "L22": -14.408948416058085,
+        "L33": -8.25505368478426
+      },
+      "per_layer_zscores": {
+        "L11": -0.33989264703995326,
+        "L22": -0.47958550969683394,
+        "L33": -0.6163162119732554
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        392,
+        448
+      ],
+      "sequence": "INEVKRDSDHLVIIQKVKDSICDIHLLQNGNGSDLLQYGRLLLDGELHIKAHEDQK",
+      "zmean": -0.407389036505345,
+      "per_layer_scores": {
+        "L11": -18.97790455556753,
+        "L22": -14.55725864964475,
+        "L33": -7.295688631168474
+      },
+      "per_layer_zscores": {
+        "L11": -0.3825373649191446,
+        "L22": -0.502947253289071,
+        "L33": -0.33668249130781963
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        112,
+        168
+      ],
+      "sequence": "PTMLYDLTNFHRVLITLSKLSQCRKVQQLHPDLIGFNLQLSPTERSHSDEAIYKDL",
+      "zmean": -0.3174330879891269,
+      "per_layer_scores": {
+        "L11": -18.880562598570354,
+        "L22": -14.809655417818592,
+        "L33": -6.281924033202192
+      },
+      "per_layer_zscores": {
+        "L11": -0.3684021102376063,
+        "L22": -0.5427046485745487,
+        "L33": -0.04119250515522563
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        224,
+        280
+      ],
+      "sequence": "IDTESNYLDVLTALKTKFMGPLERHLNQDELRLIFPRIRELVDIHTKFLDKLRESL",
+      "zmean": -0.37846319020800384,
+      "per_layer_scores": {
+        "L11": -19.45982948727528,
+        "L22": -14.856413445232366,
+        "L33": -6.596213032098987
+      },
+      "per_layer_zscores": {
+        "L11": -0.45251881852059184,
+        "L22": -0.5500699464430945,
+        "L33": -0.13280080566032515
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        280,
+        336
+      ],
+      "sequence": "TPNAKVKMAQVFLDFREPFLIYGEFCSLLLGAIDYLADVCKKNQIIDQLVQKCERD",
+      "zmean": -0.4234998618177433,
+      "per_layer_scores": {
+        "L11": -18.627863929591882,
+        "L22": -14.983074701858868,
+        "L33": -7.405777237513416
+      },
+      "per_layer_zscores": {
+        "L11": -0.33170714175859733,
+        "L22": -0.5700215555048506,
+        "L33": -0.36877088818978204
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        364,
+        420
+      ],
+      "sequence": "LVKETSPLHDDYRSLERAKEAMIDVSQYINEVKRDSDHLVIIQKVKDSICDIHLLQ",
+      "zmean": -0.5776142821297764,
+      "per_layer_scores": {
+        "L11": -19.196755909355012,
+        "L22": -15.238090770297575,
+        "L33": -8.570747618065722
+      },
+      "per_layer_zscores": {
+        "L11": -0.41431728509555144,
+        "L22": -0.610191541477424,
+        "L33": -0.7083340198163538
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        84,
+        140
+      ],
+      "sequence": "QFLCSKNIKLFLDVCHNNFGIRDADLFEPTMLYDLTNFHRVLITLSKLSQCRKVQQ",
+      "zmean": -0.5634002315049965,
+      "per_layer_scores": {
+        "L11": -19.15904826055708,
+        "L22": -15.500888982137141,
+        "L33": -8.30121652310082
+      },
+      "per_layer_zscores": {
+        "L11": -0.4088416686641266,
+        "L22": -0.6515873662497367,
+        "L33": -0.6297716596011261
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        308,
+        364
+      ],
+      "sequence": "LLGAIDYLADVCKKNQIIDQLVQKCERDYNVGKLQLRDILSVPMQRILKYHLLLDK",
+      "zmean": -0.4324458673595539,
+      "per_layer_scores": {
+        "L11": -17.941056892691343,
+        "L22": -15.654747343186564,
+        "L33": -7.4770326912304474
+      },
+      "per_layer_zscores": {
+        "L11": -0.2319742754474814,
+        "L22": -0.675823047722506,
+        "L33": -0.3895402789086744
+      }
+    },
+    {
+      "motif_id": "PF00018",
+      "motif_name": "SH3 domain",
+      "window_length": 56,
+      "span": [
+        252,
+        308
+      ],
+      "sequence": "DELRLIFPRIRELVDIHTKFLDKLRESLTPNAKVKMAQVFLDFREPFLIYGEFCSL",
+      "zmean": -0.5542064536095529,
+      "per_layer_scores": {
+        "L11": -18.718246029906336,
+        "L22": -15.663802051040538,
+        "L33": -8.338154560051574
+      },
+      "per_layer_zscores": {
+        "L11": -0.3448317392703794,
+        "L22": -0.6772493401506919,
+        "L33": -0.6405382814075876
+      }
+    }
+  ]
+}

@@ -1,0 +1,157 @@
+{
+  "motif_id": "PF00621",
+  "motif_name": "RhoGEF domain",
+  "protein": "sp|Q9NHV9|VAV_DROME Protein vav OS=Drosophila melanogaster OX=7227 GN=Vav PE=1 SV=2",
+  "protein_length": 793,
+  "window_length": 195,
+  "n_windows": 7,
+  "windows": [
+    {
+      "motif_id": "PF00621",
+      "motif_name": "RhoGEF domain",
+      "window_length": 195,
+      "span": [
+        194,
+        389
+      ],
+      "sequence": "QDLCALHRTSRSQTASSTSFEQRDYVIRELIDTESNYLDVLTALKTKFMGPLERHLNQDELRLIFPRIRELVDIHTKFLDKLRESLTPNAKVKMAQVFLDFREPFLIYGEFCSLLLGAIDYLADVCKKNQIIDQLVQKCERDYNVGKLQLRDILSVPMQRILKYHLLLDKLVKETSPLHDDYRSLERAKEAMIDV",
+      "zmean": 1.5480066371016663,
+      "per_layer_scores": {
+        "L11": 11.355013308463786,
+        "L22": 12.77903670924324,
+        "L33": 10.912151544000329
+      },
+      "per_layer_zscores": {
+        "L11": 1.5314220972359058,
+        "L22": 1.5672142242543703,
+        "L33": 1.5453835898147228
+      }
+    },
+    {
+      "motif_id": "PF00621",
+      "motif_name": "RhoGEF domain",
+      "window_length": 195,
+      "span": [
+        291,
+        486
+      ],
+      "sequence": "FLDFREPFLIYGEFCSLLLGAIDYLADVCKKNQIIDQLVQKCERDYNVGKLQLRDILSVPMQRILKYHLLLDKLVKETSPLHDDYRSLERAKEAMIDVSQYINEVKRDSDHLVIIQKVKDSICDIHLLQNGNGSDLLQYGRLLLDGELHIKAHEDQKTKLRYAFVFDKILIMVKALHIKTGDMQYTYRDSHNLAD",
+      "zmean": 1.2383506071883073,
+      "per_layer_scores": {
+        "L11": 9.040770673290472,
+        "L22": 8.917338827094362,
+        "L33": 8.90982073770789
+      },
+      "per_layer_zscores": {
+        "L11": 1.237015798834943,
+        "L22": 1.1900745927297949,
+        "L33": 1.2879614300001843
+      }
+    },
+    {
+      "motif_id": "PF00621",
+      "motif_name": "RhoGEF domain",
+      "window_length": 195,
+      "span": [
+        97,
+        292
+      ],
+      "sequence": "VCHNNFGIRDADLFEPTMLYDLTNFHRVLITLSKLSQCRKVQQLHPDLIGFNLQLSPTERSHSDEAIYKDLHSTTTDNIACNGTGYDHTNTKEEEVYQDLCALHRTSRSQTASSTSFEQRDYVIRELIDTESNYLDVLTALKTKFMGPLERHLNQDELRLIFPRIRELVDIHTKFLDKLRESLTPNAKVKMAQVF",
+      "zmean": 0.3808953517429379,
+      "per_layer_scores": {
+        "L11": 2.563135484728887,
+        "L22": 0.25293050745007173,
+        "L33": 1.8926710773667337
+      },
+      "per_layer_zscores": {
+        "L11": 0.4129636578573313,
+        "L22": 0.3438945287340132,
+        "L33": 0.3858278686374692
+      }
+    },
+    {
+      "motif_id": "PF00621",
+      "motif_name": "RhoGEF domain",
+      "window_length": 195,
+      "span": [
+        388,
+        583
+      ],
+      "sequence": "VSQYINEVKRDSDHLVIIQKVKDSICDIHLLQNGNGSDLLQYGRLLLDGELHIKAHEDQKTKLRYAFVFDKILIMVKALHIKTGDMQYTYRDSHNLADYRVEQSHSRRTIGRDTRFKYQLLLARKSGKTAFTLYLKSEHERDKWRKALTEAMESLEPPGCQSTDHKMEIYTFDAPTTCRHCSKFLKGRIHQGYRC",
+      "zmean": -0.26255452485501224,
+      "per_layer_scores": {
+        "L11": -2.6827702583668573,
+        "L22": -4.493933760646053,
+        "L33": -4.3254193393361975
+      },
+      "per_layer_zscores": {
+        "L11": -0.25439406346021265,
+        "L22": -0.11969187693549374,
+        "L33": -0.41357763416933035
+      }
+    },
+    {
+      "motif_id": "PF00621",
+      "motif_name": "RhoGEF domain",
+      "window_length": 195,
+      "span": [
+        0,
+        195
+      ],
+      "sequence": "MASSSSSNSFGGVAGVNGDLWRECVAWLTRCKVIPPDHKAAQPDAEIRILAMTLRDGVLLCNLVIHLDPSSLDPREFNRKPQMAQFLCSKNIKLFLDVCHNNFGIRDADLFEPTMLYDLTNFHRVLITLSKLSQCRKVQQLHPDLIGFNLQLSPTERSHSDEAIYKDLHSTTTDNIACNGTGYDHTNTKEEEVYQ",
+      "zmean": -0.9106120859985817,
+      "per_layer_scores": {
+        "L11": -8.47192009405592,
+        "L22": -12.320062520842427,
+        "L33": -7.774311100563354
+      },
+      "per_layer_zscores": {
+        "L11": -0.990860563605786,
+        "L22": -0.8840042097381646,
+        "L33": -0.8569714846517945
+      }
+    },
+    {
+      "motif_id": "PF00621",
+      "motif_name": "RhoGEF domain",
+      "window_length": 195,
+      "span": [
+        485,
+        680
+      ],
+      "sequence": "DYRVEQSHSRRTIGRDTRFKYQLLLARKSGKTAFTLYLKSEHERDKWRKALTEAMESLEPPGCQSTDHKMEIYTFDAPTTCRHCSKFLKGRIHQGYRCKVCQISVHKGCISSTGRCKQNPVSVPPPVCDRQLSEFNWFAGNMDRETAAHRLENRRIGTYLLRVRPQGPSTAHETMYALSLKTDDNVIKHMKINQE",
+      "zmean": -0.9284015773294886,
+      "per_layer_scores": {
+        "L11": -7.280842413796016,
+        "L22": -13.156886713574288,
+        "L33": -8.732343003200167
+      },
+      "per_layer_zscores": {
+        "L11": -0.8393376568786516,
+        "L22": -0.9657298074750145,
+        "L33": -0.9801372676347996
+      }
+    },
+    {
+      "motif_id": "PF00621",
+      "motif_name": "RhoGEF domain",
+      "window_length": 195,
+      "span": [
+        582,
+        777
+      ],
+      "sequence": "CKVCQISVHKGCISSTGRCKQNPVSVPPPVCDRQLSEFNWFAGNMDRETAAHRLENRRIGTYLLRVRPQGPSTAHETMYALSLKTDDNVIKHMKINQENSGDSMLYCLSSRRHFKTIVELVSYYERNDLGENFAGLNQSLQWPYKEVIATALYDYEPKAGSNQLQLRTDCQVLVIGKDGDSKGWWRGKIGDTVGY",
+      "zmean": -1.0656844078498293,
+      "per_layer_scores": {
+        "L11": -9.304752186210754,
+        "L22": -14.85691648500415,
+        "L33": -8.641718765677782
+      },
+      "per_layer_zscores": {
+        "L11": -1.0968092699835303,
+        "L22": -1.1317574515695061,
+        "L33": -0.9684865019964513
+      }
+    }
+  ]
+}

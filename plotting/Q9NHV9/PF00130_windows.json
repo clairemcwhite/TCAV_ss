@@ -1,0 +1,535 @@
+{
+  "motif_id": "PF00130",
+  "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+  "protein": "sp|Q9NHV9|VAV_DROME Protein vav OS=Drosophila melanogaster OX=7227 GN=Vav PE=1 SV=2",
+  "protein_length": 793,
+  "window_length": 61,
+  "n_windows": 25,
+  "windows": [
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        540,
+        601
+      ],
+      "sequence": "ESLEPPGCQSTDHKMEIYTFDAPTTCRHCSKFLKGRIHQGYRCKVCQISVHKGCISSTGRC",
+      "zmean": 3.726835504886845,
+      "per_layer_scores": {
+        "L11": 14.325656010624868,
+        "L22": 14.057718362447527,
+        "L33": 8.032939316212918
+      },
+      "per_layer_zscores": {
+        "L11": 3.7703568508494043,
+        "L22": 3.672675297987044,
+        "L33": 3.737474365824087
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        570,
+        631
+      ],
+      "sequence": "KFLKGRIHQGYRCKVCQISVHKGCISSTGRCKQNPVSVPPPVCDRQLSEFNWFAGNMDRET",
+      "zmean": 2.2578128959895185,
+      "per_layer_scores": {
+        "L11": 7.4866926251294075,
+        "L22": 5.16057105030591,
+        "L33": 1.1510551418599007
+      },
+      "per_layer_zscores": {
+        "L11": 2.685115655819417,
+        "L22": 2.321647380110053,
+        "L33": 1.7666756520390852
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        510,
+        571
+      ],
+      "sequence": "ARKSGKTAFTLYLKSEHERDKWRKALTEAMESLEPPGCQSTDHKMEIYTFDAPTTCRHCSK",
+      "zmean": 0.9092074303918083,
+      "per_layer_scores": {
+        "L11": -7.503919174186251,
+        "L22": -0.5631589366924931,
+        "L33": -1.6350993393353725
+      },
+      "per_layer_zscores": {
+        "L11": 0.3063297863376266,
+        "L22": 1.452501491486661,
+        "L33": 0.9687910133511373
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        420,
+        481
+      ],
+      "sequence": "NGNGSDLLQYGRLLLDGELHIKAHEDQKTKLRYAFVFDKILIMVKALHIKTGDMQYTYRDS",
+      "zmean": 0.384242445696456,
+      "per_layer_scores": {
+        "L11": -7.684336585733205,
+        "L22": -9.738235066686833,
+        "L33": -2.169483240796013
+      },
+      "per_layer_zscores": {
+        "L11": 0.2777002417305167,
+        "L22": 0.059270204492789545,
+        "L33": 0.8157568908660618
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        720,
+        781
+      ],
+      "sequence": "SLQWPYKEVIATALYDYEPKAGSNQLQLRTDCQVLVIGKDGDSKGWWRGKIGDTVGYFPKE",
+      "zmean": 0.16327582859089715,
+      "per_layer_scores": {
+        "L11": -8.073210616680562,
+        "L22": -9.744752775534728,
+        "L33": -4.265343256225211
+      },
+      "per_layer_zscores": {
+        "L11": 0.21599174962826462,
+        "L22": 0.05828049326230526,
+        "L33": 0.21555524288212155
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        450,
+        511
+      ],
+      "sequence": "LRYAFVFDKILIMVKALHIKTGDMQYTYRDSHNLADYRVEQSHSRRTIGRDTRFKYQLLLA",
+      "zmean": 0.024771152279308577,
+      "per_layer_scores": {
+        "L11": -11.702490078265653,
+        "L22": -9.968261739358404,
+        "L33": -3.586728991587406
+      },
+      "per_layer_zscores": {
+        "L11": -0.3599206157371846,
+        "L22": 0.02434075511618498,
+        "L33": 0.4098933174589253
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        690,
+        751
+      ],
+      "sequence": "SSRRHFKTIVELVSYYERNDLGENFAGLNQSLQWPYKEVIATALYDYEPKAGSNQLQLRTD",
+      "zmean": -0.07866220981307787,
+      "per_layer_scores": {
+        "L11": -10.760053270866758,
+        "L22": -10.800653662631245,
+        "L33": -4.751120119114013
+      },
+      "per_layer_zscores": {
+        "L11": -0.21036999096399375,
+        "L22": -0.10205759342214364,
+        "L33": 0.0764409549469038
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        480,
+        541
+      ],
+      "sequence": "SHNLADYRVEQSHSRRTIGRDTRFKYQLLLARKSGKTAFTLYLKSEHERDKWRKALTEAME",
+      "zmean": -0.033174155413205286,
+      "per_layer_scores": {
+        "L11": -11.606999540972573,
+        "L22": -11.086164254853411,
+        "L33": -3.6538991172275663
+      },
+      "per_layer_zscores": {
+        "L11": -0.34476769577481386,
+        "L22": -0.14541225165235466,
+        "L33": 0.39065748118755267
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        630,
+        691
+      ],
+      "sequence": "TAAHRLENRRIGTYLLRVRPQGPSTAHETMYALSLKTDDNVIKHMKINQENSGDSMLYCLS",
+      "zmean": -0.1341854968593842,
+      "per_layer_scores": {
+        "L11": -10.678829000342398,
+        "L22": -11.225961291919358,
+        "L33": -5.152259225052739
+      },
+      "per_layer_zscores": {
+        "L11": -0.19748091414918809,
+        "L22": -0.16664037042867688,
+        "L33": -0.03843520600028763
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        210,
+        271
+      ],
+      "sequence": "STSFEQRDYVIRELIDTESNYLDVLTALKTKFMGPLERHLNQDELRLIFPRIRELVDIHTK",
+      "zmean": -0.2028723034443347,
+      "per_layer_scores": {
+        "L11": -11.271931826044268,
+        "L22": -11.318915819130144,
+        "L33": -5.493870090228435
+      },
+      "per_layer_zscores": {
+        "L11": -0.291597461213247,
+        "L22": -0.18075547462431585,
+        "L33": -0.13626397449544128
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        600,
+        661
+      ],
+      "sequence": "CKQNPVSVPPPVCDRQLSEFNWFAGNMDRETAAHRLENRRIGTYLLRVRPQGPSTAHETMY",
+      "zmean": -0.23554237781533918,
+      "per_layer_scores": {
+        "L11": -10.589688144430697,
+        "L22": -11.351194571727927,
+        "L33": -6.197041333541797
+      },
+      "per_layer_zscores": {
+        "L11": -0.18333559364626192,
+        "L22": -0.18565698905179273,
+        "L33": -0.3376345507479629
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        300,
+        361
+      ],
+      "sequence": "IYGEFCSLLLGAIDYLADVCKKNQIIDQLVQKCERDYNVGKLQLRDILSVPMQRILKYHLL",
+      "zmean": -0.23886006220324166,
+      "per_layer_scores": {
+        "L11": -10.065643660980765,
+        "L22": -11.758480051345934,
+        "L33": -6.306216249381793
+      },
+      "per_layer_zscores": {
+        "L11": -0.10017757255285384,
+        "L22": -0.24750311053378013,
+        "L33": -0.368899503523091
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        180,
+        241
+      ],
+      "sequence": "TGYDHTNTKEEEVYQDLCALHRTSRSQTASSTSFEQRDYVIRELIDTESNYLDVLTALKTK",
+      "zmean": -0.3307140377555239,
+      "per_layer_scores": {
+        "L11": -9.381418700793947,
+        "L22": -11.916722699876281,
+        "L33": -7.563690802206576
+      },
+      "per_layer_zscores": {
+        "L11": 0.008398694288599915,
+        "L22": -0.2715321873224204,
+        "L33": -0.7290086202327511
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        150,
+        211
+      ],
+      "sequence": "QLSPTERSHSDEAIYKDLHSTTTDNIACNGTGYDHTNTKEEEVYQDLCALHRTSRSQTASS",
+      "zmean": -0.4883025573106541,
+      "per_layer_scores": {
+        "L11": -10.481523402963838,
+        "L22": -11.94599949919574,
+        "L33": -8.589443250415854
+      },
+      "per_layer_zscores": {
+        "L11": -0.1661714670567612,
+        "L22": -0.2759778564609647,
+        "L33": -1.0227583484142364
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        330,
+        391
+      ],
+      "sequence": "QKCERDYNVGKLQLRDILSVPMQRILKYHLLLDKLVKETSPLHDDYRSLERAKEAMIDVSQ",
+      "zmean": -0.293990906288305,
+      "per_layer_scores": {
+        "L11": -10.68035686201019,
+        "L22": -12.105710671915846,
+        "L33": -6.35901391343792
+      },
+      "per_layer_zscores": {
+        "L11": -0.19772336294277432,
+        "L22": -0.30022992800386006,
+        "L33": -0.3840194279182805
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        0,
+        61
+      ],
+      "sequence": "MASSSSSNSFGGVAGVNGDLWRECVAWLTRCKVIPPDHKAAQPDAEIRILAMTLRDGVLLC",
+      "zmean": -0.36414460965104595,
+      "per_layer_scores": {
+        "L11": -12.927886857757017,
+        "L22": -12.22427517087338,
+        "L33": -5.785666651855931
+      },
+      "per_layer_zscores": {
+        "L11": -0.5543727556889123,
+        "L22": -0.3182338951790611,
+        "L33": -0.21982717808516455
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        660,
+        721
+      ],
+      "sequence": "YALSLKTDDNVIKHMKINQENSGDSMLYCLSSRRHFKTIVELVSYYERNDLGENFAGLNQS",
+      "zmean": -0.31555138004896627,
+      "per_layer_scores": {
+        "L11": -12.088800490546527,
+        "L22": -12.429021738984462,
+        "L33": -5.6329999427156485
+      },
+      "per_layer_zscores": {
+        "L11": -0.421222299902562,
+        "L22": -0.34932457176368764,
+        "L33": -0.17610726848064934
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        360,
+        421
+      ],
+      "sequence": "LLDKLVKETSPLHDDYRSLERAKEAMIDVSQYINEVKRDSDHLVIIQKVKDSICDIHLLQN",
+      "zmean": -0.26502738110544866,
+      "per_layer_scores": {
+        "L11": -12.2996556496774,
+        "L22": -12.604793348971914,
+        "L33": -4.893680897032894
+      },
+      "per_layer_zscores": {
+        "L11": -0.45468185977661274,
+        "L22": -0.37601541366299657,
+        "L33": 0.035615130123263346
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        30,
+        91
+      ],
+      "sequence": "CKVIPPDHKAAQPDAEIRILAMTLRDGVLLCNLVIHLDPSSLDPREFNRKPQMAQFLCSKN",
+      "zmean": -0.6018045780820817,
+      "per_layer_scores": {
+        "L11": -13.794597239070173,
+        "L22": -12.990913924464614,
+        "L33": -7.388573242715768
+      },
+      "per_layer_zscores": {
+        "L11": -0.691906729325334,
+        "L22": -0.43464765373453934,
+        "L33": -0.6788593511863714
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        90,
+        151
+      ],
+      "sequence": "NIKLFLDVCHNNFGIRDADLFEPTMLYDLTNFHRVLITLSKLSQCRKVQQLHPDLIGFNLQ",
+      "zmean": -0.6378515072633048,
+      "per_layer_scores": {
+        "L11": -14.142461420996277,
+        "L22": -13.892030805502714,
+        "L33": -7.095620662857531
+      },
+      "per_layer_zscores": {
+        "L11": -0.7471075717954482,
+        "L22": -0.5714818569730675,
+        "L33": -0.5949650930213987
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        60,
+        121
+      ],
+      "sequence": "CNLVIHLDPSSLDPREFNRKPQMAQFLCSKNIKLFLDVCHNNFGIRDADLFEPTMLYDLTN",
+      "zmean": -0.510251156673591,
+      "per_layer_scores": {
+        "L11": -12.237228174466853,
+        "L22": -14.440475086151482,
+        "L33": -6.523817507118771
+      },
+      "per_layer_zscores": {
+        "L11": -0.4447755532237974,
+        "L22": -0.6547628804922896,
+        "L33": -0.4312150363046861
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        270,
+        331
+      ],
+      "sequence": "KFLDKLRESLTPNAKVKMAQVFLDFREPFLIYGEFCSLLLGAIDYLADVCKKNQIIDQLVQ",
+      "zmean": -0.5786194538780599,
+      "per_layer_scores": {
+        "L11": -12.675535800649236,
+        "L22": -14.707933581824829,
+        "L33": -6.855336018919594
+      },
+      "per_layer_zscores": {
+        "L11": -0.5143284174835707,
+        "L22": -0.6953763357775541,
+        "L33": -0.5261536083730548
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        240,
+        301
+      ],
+      "sequence": "KFMGPLERHLNQDELRLIFPRIRELVDIHTKFLDKLRESLTPNAKVKMAQVFLDFREPFLI",
+      "zmean": -0.7541419953187117,
+      "per_layer_scores": {
+        "L11": -12.455355207274394,
+        "L22": -15.099237539543381,
+        "L33": -8.608589192292884
+      },
+      "per_layer_zscores": {
+        "L11": -0.4793890506808029,
+        "L22": -0.754795670167137,
+        "L33": -1.0282412651081954
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        390,
+        451
+      ],
+      "sequence": "QYINEVKRDSDHLVIIQKVKDSICDIHLLQNGNGSDLLQYGRLLLDGELHIKAHEDQKTKL",
+      "zmean": -0.6893084891805724,
+      "per_layer_scores": {
+        "L11": -12.229913788614681,
+        "L22": -15.229407066362196,
+        "L33": -7.985306428832403
+      },
+      "per_layer_zscores": {
+        "L11": -0.44361486959446883,
+        "L22": -0.774561855734174,
+        "L33": -0.8497487422130742
+      }
+    },
+    {
+      "motif_id": "PF00130",
+      "motif_name": "Phorbol esters/diacylglycerol binding domain (C1 domain)",
+      "window_length": 61,
+      "span": [
+        120,
+        181
+      ],
+      "sequence": "NFHRVLITLSKLSQCRKVQQLHPDLIGFNLQLSPTERSHSDEAIYKDLHSTTTDNIACNGT",
+      "zmean": -0.7131405997299902,
+      "per_layer_scores": {
+        "L11": -12.339151100997281,
+        "L22": -15.289913475770218,
+        "L33": -8.142352791603212
+      },
+      "per_layer_zscores": {
+        "L11": -0.46094919714524696,
+        "L22": -0.7837497274702279,
+        "L33": -0.8947228745744955
+      }
+    }
+  ]
+}
