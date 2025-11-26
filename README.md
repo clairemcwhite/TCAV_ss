@@ -1,4 +1,4 @@
-# Protein Motif Detection using Concept Activation Vectors (TCAV)
+# Protein Motif Detection using Concept Activation Vectors (CAV)
 
 ## Overview
 
