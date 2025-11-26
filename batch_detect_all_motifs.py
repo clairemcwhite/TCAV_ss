@@ -284,12 +284,29 @@ def main(args):
     
     Lseq = len(seq)
     
+    # Parse motif filter list
+    motif_filter = None
+    if args.motifs:
+        motif_filter = set(args.motifs)
+    elif args.motifs_file:
+        with open(args.motifs_file, 'r') as f:
+            motif_filter = set(line.strip() for line in f if line.strip())
+    
+    # Determine if we're filtering motifs
+    filter_mode = motif_filter is not None
+    
     print(f"\n{'='*80}")
-    print(f"BATCH MOTIF DETECTION: Testing Against ALL Motifs")
+    if filter_mode:
+        print(f"BATCH MOTIF DETECTION: Testing Against {len(motif_filter)} Specified Motifs")
+    else:
+        print(f"BATCH MOTIF DETECTION: Testing Against ALL Motifs")
     print(f"{'='*80}")
     print(f"Protein: {header}")
     print(f"Length: {Lseq} aa")
     print(f"Layers: {args.layers}")
+    if filter_mode:
+        print(f"Motifs to test: {sorted(motif_filter)}")
+        print(f"Window scores will be saved to: {args.window_scores_dir}")
     print()
     
     # Load motif names
@@ -300,8 +317,22 @@ def main(args):
     # Find all available motifs
     print("Finding trained motifs...")
     try:
-        motifs = find_all_motifs(args.tcav_dir, args.data_dir, name_map)
-        print(f"✓ Found {len(motifs)} trained motifs")
+        all_motifs = find_all_motifs(args.tcav_dir, args.data_dir, name_map)
+        print(f"✓ Found {len(all_motifs)} trained motifs")
+        
+        # Filter motifs if requested
+        if filter_mode:
+            motifs = [m for m in all_motifs if m["motif_id"] in motif_filter]
+            print(f"✓ Filtered to {len(motifs)} requested motifs")
+            
+            # Check for missing motifs
+            found_ids = {m["motif_id"] for m in motifs}
+            missing = motif_filter - found_ids
+            if missing:
+                print(f"[WARN] Requested motifs not found: {sorted(missing)}")
+        else:
+            motifs = all_motifs
+            
     except Exception as e:
         print(f"[ERROR] {e}")
         return
@@ -507,6 +538,41 @@ def main(args):
         }, f, indent=2)
     print(f"\n✓ Full results saved to: {out_json}")
     
+    # Save detailed window scores ONLY when specific motifs were requested
+    if filter_mode:
+        os.makedirs(args.window_scores_dir, exist_ok=True)
+        print(f"\nSaving detailed window scores for {len(motif_summaries)} motifs...")
+        
+        # Group hits by motif
+        hits_by_motif = {}
+        for hit in all_hits:
+            motif_id = hit["motif_id"]
+            if motif_id not in hits_by_motif:
+                hits_by_motif[motif_id] = []
+            hits_by_motif[motif_id].append(hit)
+        
+        # Save one file per motif
+        for motif_id, hits in hits_by_motif.items():
+            # Get motif info
+            motif_info = next((m for m in motif_summaries if m["motif_id"] == motif_id), None)
+            
+            window_data = {
+                "motif_id": motif_id,
+                "motif_name": motif_info["motif_name"] if motif_info else "",
+                "protein": header,
+                "protein_length": Lseq,
+                "window_length": hits[0]["window_length"] if hits else 0,
+                "n_windows": len(hits),
+                "windows": hits
+            }
+            
+            window_file = os.path.join(args.window_scores_dir, f"{motif_id}_windows.json")
+            with open(window_file, "w") as f:
+                json.dump(window_data, f, indent=2)
+        
+        print(f"✓ Window scores saved to: {args.window_scores_dir}")
+        print(f"  - {len(hits_by_motif)} motif files created")
+    
     # Save top-k summary
     summary_file = os.path.join(args.outdir, f"top_{args.topk}_summary.txt")
     with open(summary_file, "w") as f:
@@ -557,14 +623,17 @@ if __name__ == "__main__":
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Rank by ensemble z-mean (default)
+  # Test ALL motifs (default behavior)
   python batch_detect_all_motifs.py --fasta my_protein.fasta
+  
+  # Test specific motifs and save ALL window scores
+  python batch_detect_all_motifs.py --fasta my_protein.fasta --motifs PF00096 PF00641 PF07679
+  
+  # Test motifs from file and save window scores to custom directory
+  python batch_detect_all_motifs.py --fasta my_protein.fasta --motifs-file my_motifs.txt --window-scores-dir my_scores/
   
   # Rank by max score in layer 4
   python batch_detect_all_motifs.py --fasta my_protein.fasta --rank-by-layer 4 --rank-by score
-  
-  # Rank by max z-score in layer 6
-  python batch_detect_all_motifs.py --fasta my_protein.fasta --rank-by-layer 6 --rank-by zscore
   
   # Show top 20 with detailed view
   python batch_detect_all_motifs.py --fasta test.fasta --topk 20 --show-detail
@@ -587,6 +656,13 @@ Examples:
     ap.add_argument("--model-name", type=str, default=DEFAULT_MODEL_NAME,
                    help=f"HuggingFace ESM2 model name (default: {DEFAULT_MODEL_NAME})")
     
+    # Motif filtering
+    motif_group = ap.add_mutually_exclusive_group()
+    motif_group.add_argument("--motifs", type=str, nargs="+",
+                            help="Specific motif IDs to test (e.g., PF00001 PF00002). When provided, saves ALL window scores.")
+    motif_group.add_argument("--motifs-file", type=str,
+                            help="File containing motif IDs to test (one per line). When provided, saves ALL window scores.")
+    
     # Parameters
     ap.add_argument("--layers", type=int, nargs="+", default=DEFAULT_LAYERS,
                    help=f"Layers to use (default: {DEFAULT_LAYERS})")
@@ -607,6 +683,8 @@ Examples:
                    help="Device (default: cpu)")
     ap.add_argument("--outdir", type=str, default="batch_detection_outputs",
                    help="Output directory (default: batch_detection_outputs)")
+    ap.add_argument("--window-scores-dir", type=str, default="window_scores",
+                   help="Directory to save detailed window scores when using --motifs (default: window_scores)")
     ap.add_argument("--show-detail", action="store_true",
                    help="Show detailed view of top match")
     ap.add_argument("--verbose", action="store_true",
@@ -614,4 +692,5 @@ Examples:
     
     args = ap.parse_args()
     main(args)
+
 

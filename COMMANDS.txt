@@ -1,105 +1,62 @@
-# Quick Reference Commands
+python batch_detect_all_motifs.py     --fasta my_protein.fasta     --tcav-dir ./tcav_outputs_esmplusplus_all     --data-dir ./tcav_data     --model-name ESMplusplus_large     --layers 25     --device cuda     --rank-by-layer 25 --rank-by score --topk 100
 
-## Phase 1: Data Collection & Training
+python batch_detect_all_motifs.py --fasta my_protein.fasta --model-name ESMplusplus_large --tcav-dir ./tcav_outputs_esmplusplus_all --layers 25 --rank-by-layer 25 --rank-by score --device cuda
 
-# Collect training data
-python batch_collect_data.py --data-dir ./tcav_data --samples-per-motif 100
+python batch_detect_all_motifs.py --fasta Q9NHV9.fasta --motifs PF00017 PF00018 PF00130 PF00621 --window-scores-dir window_scores_Q9NHV9/ --model-name ESMplusplus_large --tcav-dir ./tcav_outputs_esmplusplus_all --layers 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 --rank-by-layer 25 --rank-by score
 
-# Check window sizes
-python check_window_sizes.py --data-dir ./tcav_data
 
-# Train CAVs
-python batch_train_cavs.py \
-    --data-dir ./tcav_data \
-    --output-dir ./tcav_outputs_650m \
-    --model-name esm2_t33_650M_UR50D \
-    --layers 22 \
-    --device cuda
+python batch_detect_all_motifs.py --fasta P03001.fasta --motifs PF00096 --window-scores-dir window_scores_P03001/ --model-name ESMplusplus_large --tcav-dir ./tcav_outputs_esmplusplus_all --layers 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 --rank-by-layer 25 --rank-by score
 
-## Phase 2: Test Detection
 
-# Collect test data
-python collect_test_data.py
 
-# (Optional) Create small test set
-python create_small_test_set.py \
-    --input-dir ./test_data \
-    --output-dir ./test_data_small \
-    --n-samples 10
-
-# Run detection (on-the-fly embedding)
 python run_test_detection_onthefly.py \
-    --test-data-dir ./test_data \
-    --tcav-dir ./tcav_outputs_650m \
-    --data-dir ./tcav_data \
-    --model-name esm2_t33_650M_UR50D \
-    --layers 22 \
-    --rank-by score \
-    --rank-by-layer 22 \
-    --device cuda \
-    --output-file test_detection_results.json
+  --test-data-dir ./test_data_small \
+  --tcav-dir ./tcav_outputs_esmplusplus_all \
+  --data-dir ./tcav_data \
+  --model-name ESMplusplus_large \
+  --layers 25 \
+  --rank-by score \
+  --device cuda
 
-## Phase 3: Post-Processing & Evaluation
+#python batch_train_cavs.py \
+#  --data-dir ./tcav_data \
+#  --config esm2_tcav/config.yaml \
+#  --output-dir ./tcav_outputs_esmplusplus_large \
+#  --model ESMplusplus_large \
+#  --layers 20 25 30 35 \
+#  --batch-size 8
 
-# Step 1: Remove duplicates/overlaps (NMS)
-python preprocess_detections.py \
-    --input test_detection_results.json \
-    --output test_detection_results_cleaned.json \
-    --iou-threshold 0.3
+#python batch_train_cavs.py \
+#  --data-dir ./tcav_data \
+#  --config esm2_tcav/config.yaml \
+#  --output-dir ./tcav_outputs_esmplusplus_all \
+#  --model ESMplusplus_large \
+#  #--all \
+#  --layers 1 2 3 4 5 6 7 8 9 10 \
+#  --skip-random-cavs \
+#  --no-save-embeddings \
+#  --batch-size 4 \
 
-# Step 2: Expand intervals to maximize scores
-python expand_intervals.py \
-    --detection-results test_detection_results_cleaned.json \
-    --test-data-dir ./test_data \
-    --tcav-dir ./tcav_outputs_650m \
-    --model-name esm2_t33_650M_UR50D \
-    --layer 22 \
-    --expansion-step 5 \
-    --device cuda \
-    --output expanded_predictions.json
+#python run_test_detection_onthefly.py \
+# --test-data-dir ./test_data_small \
+# --tcav-dir ./tcav_outputs_esmplusplus_large \
+# --data-dir ./tcav_data \
+# --model-name ESMplusplus_large \
+# --layers 25 \
+# --rank-by score \
+# --device cuda \
+# --output-file ./esmc_test_detection_results_10.json \
 
-# Step 3: Evaluate
-python evaluate_metrics.py \
-    --detection-results expanded_predictions.json \
-    --output-dir ./evaluation_results \
-    --k-max 20 \
-    --overlap-thresholds 80.0 85.0 90.0 95.0 100.0
 
-## HPC Commands (from user's history)
+#for start in {0..35..6}; do
+#    end=$((start+5))
+#    if [ $end -gt 35 ]; then end=35; fi
+#    layers=$(seq -s " " $start $end)
+#
+#    echo "Running layers: $layers"
+#
+#    python batch_train_cavs.py --data-dir ./tcav_data --config esm2_tcav/config.yaml --output-dir ./tcav_outputs_esmplusplus_all --model ESMplusplus_large --layers $layers --no-save-embeddings --batch-size 8
+#
+#done
 
-# Run detection on small test set
-python run_test_detection_onthefly.py \
-    --test-data-dir ./test_data_small \
-    --tcav-dir ./tcav_outputs_650m \
-    --data-dir ./tcav_data \
-    --model-name esm2_t33_650M_UR50D \
-    --layers 22 \
-    --rank-by score \
-    --device cuda
-
-# Alternative: With pre-computed embeddings
-python generate_test_embeddings.py \
-    --test-data-dir ./test_data \
-    --output-dir ./test_data/embeddings \
-    --model-name esm2_t33_650M_UR50D \
-    --layers 22 \
-    --device cuda \
-    --batch-size 4 \
-    --resume
-
-python run_test_detection.py \
-    --embeddings-dir ./test_data/embeddings \
-    --tcav-dir ./tcav_outputs_650m \
-    --data-dir ./tcav_data \
-    --layers 22 \
-    --rank-by-layer 22 \
-    --rank-by score \
-    --output-file ./test_results.json
-
-python evaluate_metrics.py \
-    --detection-results ./test_results.json \
-    --embeddings-dir ./test_data/embeddings \
-    --output-dir ./evaluation_tables \
-    --k-max 20 \
-    --overlap-thresholds 80.0 85.0 90.0 95.0 100.0
 

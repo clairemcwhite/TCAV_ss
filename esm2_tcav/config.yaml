@@ -3,7 +3,7 @@
 
 # Model Configuration
 model:
-  name: "esm2_t6_8M_UR50D"  # Start with smallest model
+  name: "ESMplusplus_large"  # Start with smallest model
   registry_path: "models/model_registry.yaml"
   device: "cuda"  # Auto-falls back to CPU if unavailable
   

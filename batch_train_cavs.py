@@ -86,6 +86,7 @@ def generate_motif_embeddings(
     model_name: str,
     batch_size: int,
     output_base: str,
+    layers: List[int],
     device: str = "cuda"
 ) -> str:
     """
@@ -101,12 +102,16 @@ def generate_motif_embeddings(
     logger.info(f"{'='*70}")
     
     # Check if already exists
-    expected_files = [f"L{layer}_pos.npy" for layer in model_config['layers_to_extract']]
-    expected_files += [f"L{layer}_neg.npy" for layer in model_config['layers_to_extract']]
+    expected_files = [f"L{layer}_pos.npy" for layer in layers]
+    expected_files += [f"L{layer}_neg.npy" for layer in layers]
     
     if all((embed_dir / f).exists() for f in expected_files):
         logger.info(f"✓ Embeddings already exist for {motif_id}, skipping")
         return str(embed_dir)
+    
+    # Create a modified model_config with the correct layers
+    model_config_with_layers = model_config.copy()
+    model_config_with_layers['layers_to_extract'] = layers
     
     # Generate embeddings for positives
     logger.info(f"Processing positives: {motif['pos_jsonl']}")
@@ -114,7 +119,7 @@ def generate_motif_embeddings(
         jsonl_path=motif["pos_jsonl"],
         model=model,
         tokenizer=tokenizer,
-        model_config=model_config,
+        model_config=model_config_with_layers,
         output_dir=str(embed_dir / "pos"),
         device=device,
         batch_size=batch_size,
@@ -127,7 +132,7 @@ def generate_motif_embeddings(
         jsonl_path=motif["neg_jsonl"],
         model=model,
         tokenizer=tokenizer,
-        model_config=model_config,
+        model_config=model_config_with_layers,
         output_dir=str(embed_dir / "neg"),
         device=device,
         batch_size=batch_size,
@@ -135,7 +140,7 @@ def generate_motif_embeddings(
     )
     
     # Copy/symlink the _all.npy files to _pos.npy and _neg.npy for CAV training
-    for layer in model_config['layers_to_extract']:
+    for layer in layers:
         pos_src = embed_dir / "pos" / f"L{layer}_all.npy"
         pos_dst = embed_dir / f"L{layer}_pos.npy"
         neg_src = embed_dir / "neg" / f"L{layer}_all.npy"
@@ -198,7 +203,9 @@ def batch_train_all(
     model_name: str = None,
     layers: List[int] = None,
     batch_size: int = None,
-    skip_existing: bool = True
+    skip_existing: bool = True,
+    train_all_layers: bool = False,
+    no_save_embeddings: bool = False
 ):
     """
     Main batch training function.
@@ -215,8 +222,19 @@ def batch_train_all(
     )
     
     # Determine layers
-    if layers is None:
+    if train_all_layers:
+        # Train ALL layers (0-indexed: 0 to num_layers-1)
+        num_layers = model_config['num_layers']
+        layers = list(range(0, num_layers))
+        logger.info(f"⚡ --all flag: Training ALL {len(layers)} layers!")
+        logger.info(f"   Layers: {layers}")
+    elif layers is None:
+        # Use config default
         layers = model_config['layers_to_extract']
+        logger.info(f"Using layers from config: {layers}")
+    else:
+        # User provided --layers explicitly
+        logger.info(f"⚡ Using explicitly provided layers: {layers}")
     
     # Determine batch size
     if batch_size is None:
@@ -232,6 +250,8 @@ def batch_train_all(
     logger.info(f"Batch size: {batch_size}")
     logger.info(f"Device: {device}")
     logger.info(f"Output directory: {output_dir}")
+    if no_save_embeddings:
+        logger.info(f"🗑️  Embeddings: Will be deleted after CAV training (save space)")
     logger.info("")
     
     # Find all motifs
@@ -279,6 +299,7 @@ def batch_train_all(
                 model_name=model_name,
                 batch_size=batch_size,
                 output_base=output_dir,
+                layers=layers,
                 device=device
             )
             
@@ -292,10 +313,17 @@ def batch_train_all(
                 artifact_version=artifact_version
             )
             
+            # Step 3: Clean up embeddings if requested
+            if no_save_embeddings:
+                embed_path = Path(embed_dir)
+                if embed_path.exists():
+                    shutil.rmtree(embed_path)
+                    logger.info(f"🗑️  Deleted embeddings for {motif['id']} (saved space!)")
+            
             results.append({
                 "motif_id": motif["id"],
                 "status": "success",
-                "embed_dir": embed_dir,
+                "embed_dir": embed_dir if not no_save_embeddings else "deleted",
                 "cav_dir": cav_dir,
                 "n_positives": motif["metadata"]["positives_collected"],
                 "n_negatives": motif["metadata"]["negatives_collected"]
@@ -344,8 +372,22 @@ def main():
     parser.add_argument("--model", help="Model name (overrides config)")
     parser.add_argument("--layers", type=int, nargs="+", help="Layers to process (overrides config)")
     parser.add_argument("--batch-size", type=int, help="Batch size (overrides config)")
+    parser.add_argument("--all", action="store_true", help="Train CAVs for ALL layers (0 to num_layers-1)")
+    parser.add_argument("--no-save-embeddings", action="store_true", help="Delete embeddings after CAV training (save disk space)")
     
     args = parser.parse_args()
+    
+    # Debug: Show what was parsed
+    logger.info(f"Parsed arguments:")
+    logger.info(f"  --layers: {args.layers}")
+    logger.info(f"  --all: {args.all}")
+    logger.info(f"  --model: {args.model}")
+    logger.info(f"  --batch-size: {args.batch_size}")
+    
+    # Validate conflicting arguments
+    if args.all and args.layers:
+        logger.error("❌ Cannot use --all and --layers together. Choose one.")
+        sys.exit(1)
     
     batch_train_all(
         data_dir=args.data_dir,
@@ -353,12 +395,15 @@ def main():
         output_dir=args.output_dir,
         model_name=args.model,
         layers=args.layers,
-        batch_size=args.batch_size
+        batch_size=args.batch_size,
+        train_all_layers=args.all,
+        no_save_embeddings=args.no_save_embeddings
     )
 
 
 if __name__ == "__main__":
     main()
+
 
 
 

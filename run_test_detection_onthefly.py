@@ -4,6 +4,7 @@ Run motif detection on test proteins using on-the-fly window embedding.
 
 Similar to batch_detect_all_motifs.py but processes multiple test proteins.
 No pre-computed embeddings needed - embeds windows on-the-fly.
+Processes proteins sequentially to avoid race conditions.
 
 Usage:
     python run_test_detection_onthefly.py --test-data-dir ./test_data --tcav-dir ./tcav_outputs_650m --model-name esm2_t33_650M_UR50D --layers 22
@@ -198,11 +199,18 @@ def detect_motif_onthefly(
     return all_hits
 
 
-def load_test_proteins(test_data_dir: Path) -> Dict[str, Dict[str, Any]]:
+def load_test_proteins(test_data_dir: Path, trained_motif_ids: set = None) -> Dict[str, Dict[str, Any]]:
     """
     Load all test proteins from test_data directory.
     
+    Args:
+        test_data_dir: Path to test data directory
+        trained_motif_ids: Set of motif IDs that were actually trained (for filtering ground truth)
+    
     Returns dict mapping accession -> {sequence, length, ground_truth}
+    
+    Note: Ground truth is filtered to only include motifs that were trained.
+    This ensures fair evaluation - we only test detection of motifs we trained for.
     """
     proteins = {}
     
@@ -224,10 +232,21 @@ def load_test_proteins(test_data_dir: Path) -> Dict[str, Dict[str, Any]]:
                 
                 # Avoid duplicates (same protein may appear in multiple motif folders)
                 if accession not in proteins:
+                    all_ground_truth = data.get("ground_truth_annotations", [])
+                    
+                    # Filter ground truth to only include trained motifs
+                    if trained_motif_ids is not None:
+                        filtered_ground_truth = [
+                            gt for gt in all_ground_truth
+                            if gt["motif_id"] in trained_motif_ids
+                        ]
+                    else:
+                        filtered_ground_truth = all_ground_truth
+                    
                     proteins[accession] = {
                         "sequence": data.get("sequence", ""),
                         "length": data.get("length", len(data.get("sequence", ""))),
-                        "ground_truth": data.get("ground_truth_annotations", [])
+                        "ground_truth": filtered_ground_truth
                     }
     
     return proteins
@@ -340,8 +359,6 @@ def main():
     parser.add_argument("--version", default="v1",
                        help="CAV version")
     
-    parser.add_argument("--batch-size", type=int, default=1,
-                       help="Number of proteins to process in parallel (default: 1, set >1 for speedup)")
     parser.add_argument("--fp16", action="store_true",
                        help="Use mixed precision (fp16) for faster inference")
     
@@ -361,24 +378,28 @@ def main():
     print(f"Model: {args.model_name}")
     print(f"Layers: {args.layers}")
     
-    # Load test proteins
-    print("\n[1/5] Loading test proteins...")
-    test_data_dir = Path(args.test_data_dir)
-    test_proteins = load_test_proteins(test_data_dir)
-    print(f"✓ Found {len(test_proteins)} unique test proteins")
-    
-    if len(test_proteins) == 0:
-        print("[ERROR] No test proteins found!")
-        print("Run collect_test_data.py first.")
-        return
-    
-    # Find trained motifs
-    print("\n[2/5] Loading trained motifs...")
+    # Find trained motifs first (needed for ground truth filtering)
+    print("\n[1/5] Loading trained motifs...")
     trained_motifs = find_all_motifs(args.tcav_dir, args.data_dir)
     print(f"✓ Found {len(trained_motifs)} trained motifs")
     
     if len(trained_motifs) == 0:
         print("[ERROR] No trained motifs found!")
+        return
+    
+    # Create set of trained motif IDs for ground truth filtering
+    trained_motif_ids = {motif["motif_id"] for motif in trained_motifs}
+    
+    # Load test proteins (with ground truth filtered to trained motifs only)
+    print("\n[2/5] Loading test proteins...")
+    test_data_dir = Path(args.test_data_dir)
+    test_proteins = load_test_proteins(test_data_dir, trained_motif_ids)
+    print(f"✓ Found {len(test_proteins)} unique test proteins")
+    print(f"  (Ground truth filtered to {len(trained_motif_ids)} trained motifs)")
+    
+    if len(test_proteins) == 0:
+        print("[ERROR] No test proteins found!")
+        print("Run collect_test_data.py first.")
         return
     
     # Load model
@@ -427,68 +448,54 @@ def main():
     
     print(f"  Ranking by: {rank_label}")
     print(f"  Testing against: {len(trained_motifs)} motifs per protein")
-    print(f"  Batch size: {args.batch_size}")
     
     results = []
     
-    # Process proteins in batches for better GPU utilization
-    protein_items = list(test_proteins.items())
-    num_batches = (len(protein_items) + args.batch_size - 1) // args.batch_size
-    
-    with tqdm(total=len(protein_items), desc="Detecting") as pbar:
-        for batch_idx in range(num_batches):
-            batch_start = batch_idx * args.batch_size
-            batch_end = min((batch_idx + 1) * args.batch_size, len(protein_items))
-            batch = protein_items[batch_start:batch_end]
+    # Process proteins sequentially (thread-safe, no race conditions)
+    for accession, protein_data in tqdm(test_proteins.items(), desc="Detecting"):
+        try:
+            detection_result = run_detection_on_protein(
+                accession=accession,
+                sequence=protein_data["sequence"],
+                trained_motifs=trained_motifs,
+                model=model,
+                tokenizer=tokenizer,
+                layers=args.layers,
+                device=device,
+                rank_by_layer=args.rank_by_layer,
+                rank_by=args.rank_by,
+                topk=args.topk
+            )
             
-            # Process batch in parallel using threading (model calls are thread-safe with no_grad)
-            from concurrent.futures import ThreadPoolExecutor
+            # Add ground truth
+            detection_result["ground_truth"] = protein_data["ground_truth"]
+            detection_result["length"] = protein_data["length"]
             
-            with ThreadPoolExecutor(max_workers=min(args.batch_size, len(batch))) as executor:
-                # Submit all tasks and keep order
-                future_to_data = []
-                for accession, protein_data in batch:
-                    future = executor.submit(
-                        run_detection_on_protein,
-                        accession=accession,
-                        sequence=protein_data["sequence"],
-                        trained_motifs=trained_motifs,
-                        model=model,
-                        tokenizer=tokenizer,
-                        layers=args.layers,
-                        device=device,
-                        rank_by_layer=args.rank_by_layer,
-                        rank_by=args.rank_by,
-                        topk=args.topk
-                    )
-                    future_to_data.append((future, accession, protein_data))
-                
-                # Collect results in original order
-                for future, accession, protein_data in future_to_data:
-                    try:
-                        detection_result = future.result()
-                        
-                        # Add ground truth
-                        detection_result["ground_truth"] = protein_data["ground_truth"]
-                        detection_result["length"] = protein_data["length"]
-                        
-                        results.append(detection_result)
-                    except Exception as e:
-                        print(f"\n[WARN] Error processing {accession}: {e}")
-                    finally:
-                        pbar.update(1)
+            results.append(detection_result)
+        except Exception as e:
+            print(f"\n[WARN] Error processing {accession}: {e}")
     
     # Save results
     print(f"\n[5/5] Saving results...")
     
+    # Calculate ground truth statistics
+    total_gt_annotations = sum(len(r["ground_truth"]) for r in results)
+    proteins_with_gt = sum(1 for r in results if len(r["ground_truth"]) > 0)
+    
     output_data = {
         "n_proteins": len(results),
         "n_motifs": len(trained_motifs),
+        "trained_motif_ids": sorted(list(trained_motif_ids)),
         "topk": args.topk,
         "layers": args.layers,
         "rank_by": args.rank_by,
         "rank_by_layer": rank_by_layer if args.rank_by != "zmean" else None,
         "model": args.model_name,
+        "ground_truth_stats": {
+            "total_annotations": total_gt_annotations,
+            "proteins_with_ground_truth": proteins_with_gt,
+            "note": "Ground truth filtered to only include trained motifs"
+        },
         "results": results
     }
     
@@ -504,11 +511,16 @@ def main():
     print(f"Motifs tested per protein: {len(trained_motifs)}")
     print(f"Top-k per protein: {args.topk}")
     print(f"Ranking method: {rank_label}")
+    print(f"\nGround Truth Statistics:")
+    print(f"  Total annotations: {total_gt_annotations}")
+    print(f"  Proteins with ground truth: {proteins_with_gt}/{len(results)}")
+    print(f"  (Filtered to {len(trained_motif_ids)} trained motifs only)")
     print(f"\nNext step: python evaluate_metrics.py --detection-results {args.output_file}")
 
 
 if __name__ == "__main__":
     main()
+
 
 
 

@@ -92,29 +92,41 @@ def load_esm2_model(
             # HuggingFace format - use transformers
             logger.info("Detected HuggingFace format, using transformers backend")
             try:
-                from transformers import EsmModel, EsmTokenizer, AutoTokenizer
+                from transformers import EsmModel, EsmTokenizer, AutoTokenizer, AutoModelForMaskedLM
             except ImportError:
                 raise ImportError("transformers not found. Install with: pip install transformers")
             
-            model = EsmModel.from_pretrained(checkpoint_path)
+            # Check if this is ESMplusplus or standard ESM2
+            model_type = config.get('model_type', 'esm2')  # default to esm2 for backward compatibility
             
-            # Try to load tokenizer, with fallback for custom models like ESM++
-            try:
-                tokenizer = AutoTokenizer.from_pretrained(checkpoint_path)
-            except (ValueError, OSError) as e:
-                # ESM++ or other custom models may have incompatible tokenizers
-                # Fall back to standard ESM2 tokenizer which should be compatible
-                logger.warning(f"Could not load tokenizer from checkpoint: {e}")
-                logger.warning("Falling back to standard ESM2 tokenizer")
-                tokenizer = EsmTokenizer.from_pretrained("facebook/esm2_t33_650M_UR50D", do_lower_case=False)
+            if model_type == 'esmplusplus':
+                # ESMplusplus requires AutoModelForMaskedLM with trust_remote_code
+                logger.info("Loading ESMplusplus model with trust_remote_code=True")
+                model = AutoModelForMaskedLM.from_pretrained(checkpoint_path, trust_remote_code=True)
+                tokenizer = model.tokenizer  # Tokenizer is an attribute of the model
+                # Get base model for hidden size
+                actual_hidden_size = model.config.hidden_size
+            else:
+                # Standard ESM2 loading
+                model = EsmModel.from_pretrained(checkpoint_path)
                 
-                # Fix padding_idx mismatch between ESM++ model and ESM2 tokenizer
-                if hasattr(model, 'embeddings') and hasattr(model.embeddings, 'padding_idx'):
-                    if model.embeddings.padding_idx is None and hasattr(tokenizer, 'pad_token_id'):
-                        logger.warning(f"Fixing padding_idx mismatch: setting model.embeddings.padding_idx = {tokenizer.pad_token_id}")
-                        model.embeddings.padding_idx = tokenizer.pad_token_id
-            
-            actual_hidden_size = model.config.hidden_size
+                # Try to load tokenizer, with fallback for custom models
+                try:
+                    tokenizer = AutoTokenizer.from_pretrained(checkpoint_path)
+                except (ValueError, OSError) as e:
+                    # ESM++ or other custom models may have incompatible tokenizers
+                    # Fall back to standard ESM2 tokenizer which should be compatible
+                    logger.warning(f"Could not load tokenizer from checkpoint: {e}")
+                    logger.warning("Falling back to standard ESM2 tokenizer")
+                    tokenizer = EsmTokenizer.from_pretrained("facebook/esm2_t33_650M_UR50D", do_lower_case=False)
+                    
+                    # Fix padding_idx mismatch between ESM++ model and ESM2 tokenizer
+                    if hasattr(model, 'embeddings') and hasattr(model.embeddings, 'padding_idx'):
+                        if model.embeddings.padding_idx is None and hasattr(tokenizer, 'pad_token_id'):
+                            logger.warning(f"Fixing padding_idx mismatch: setting model.embeddings.padding_idx = {tokenizer.pad_token_id}")
+                            model.embeddings.padding_idx = tokenizer.pad_token_id
+                
+                actual_hidden_size = model.config.hidden_size
         else:
             # Fair-esm format
             try:

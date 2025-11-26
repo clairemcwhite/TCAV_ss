@@ -1,327 +1,151 @@
-# Motif Detection Pipeline with ESM2-TCAV
-
-This directory contains all scripts for the complete motif detection pipeline using ESM2 embeddings and TCAV (Testing with Concept Activation Vectors).
+# Protein Motif Detection using Concept Activation Vectors (TCAV)
 
 ## Overview
 
-The pipeline consists of three main phases:
-1. **Data Collection & CAV Training**: Collect training/test data and train CAV vectors for each motif
-2. **Test Detection**: Run motif detection on test proteins using trained CAVs
-3. **Post-Processing & Evaluation**: Clean predictions, expand intervals, and evaluate performance
+We present an automated approach for identifying and annotating motifs and domains in protein sequences, using pretrained Protein Language Models (PLMs) and Concept Activation Vectors (CAVs), adapted from interpretability research in computer vision. We treat motifs as conceptual entities and represent them through learned CAVs in PLM embedding space by training simple linear classifiers to distinguish motif-containing from non-motif sequences. 
 
----
 
-## Directory Structure
+## Key Features
+
+- **Interpretable motif detection** using CAVs in protein language model embedding space
+- **Multiple motif detection** in single sequences with precise localization
+- **Layer-specific analysis** to identify optimal representation layers
+- **Flexible PLM support** (ESM2, ESM-C)
+
+## Repository Structure
 
 ```
-final_content/
-├── esm2_tcav/              # Core TCAV library and utilities
-│   ├── src/                # Source code (embed, train_cav, detect, evaluate)
-│   ├── scripts/            # Wrapper scripts for pipeline steps
-│   └── slurm/              # SLURM job templates for HPC
-│
-├── Phase 1: Data Collection & Training
-│   ├── fetch_curated_motifs.py       # Download motif data from Pfam/UniProt
-│   ├── batch_collect_data.py         # Collect positive/negative samples for motifs
-│   ├── check_window_sizes.py         # Analyze optimal window sizes per motif
-│   ├── update_windows.py             # Update window lengths in metadata
-│   ├── batch_train_cavs.py           # Train CAV vectors for all motifs
-│
-├── Phase 2: Test Detection
-│   ├── collect_test_data.py          # Collect test proteins (held-out set)
-│   ├── create_small_test_set.py      # Create smaller test subset
-│   ├── run_test_detection_onthefly.py # Run detection with on-the-fly embedding
-│   ├── batch_detect_all_motifs.py    # Batch detection (pre-computed embeddings)
-│
-├── Phase 3: Post-Processing & Evaluation
-│   ├── preprocess_detections.py      # Remove duplicates/overlaps (NMS)
-│   ├── expand_intervals.py           # Greedy expansion to maximize scores
-│   └── evaluate_metrics.py           # Compute metrics (P/R/F1, IoU, etc.)
-│
-└── README.md                          # This file
+├── esm2_tcav/              # Core TCAV implementation
+│   ├── src/                # Source code for embedding, training, evaluation
+│   ├── config.yaml         # Model and training configuration
+│   └── models/             # Model registry and configurations
+├── tcav_data/              # Training data (positive/negative examples)
+├── test_data/              # Test sequences for evaluation
+├── test_data_small/        # Small test set for quick validation
+├── Fasta Files/            # Input protein sequences
+├── Outputs/                # Detection results
+├── batch_train_cavs.py     # Train CAVs for multiple motifs
+├── batch_detect_all_motifs.py  # Detect motifs in protein sequences
+└── run_test_detection_onthefly.py  # Evaluate on test dataset
 ```
 
----
+## Installation
 
-## Phase 1: Data Collection & CAV Training
-
-### 1.1 Fetch Motif Data
 ```bash
-python fetch_curated_motifs.py
-```
-Downloads curated motif families from Pfam and protein sequences from UniProt.
+# Clone the repository
+git clone <repository-url>
+cd TCAV
 
-### 1.2 Collect Training Data
-```bash
-python batch_collect_data.py \
-    --data-dir ./tcav_data \
-    --motif-list <path_to_motif_list.txt> \
-    --samples-per-motif 100
-```
-Collects positive (with motif) and negative (without motif) protein samples for each motif.
+## Usage
 
-### 1.3 Check and Update Window Sizes
-```bash
-# Analyze optimal window sizes
-python check_window_sizes.py --data-dir ./tcav_data
+### 1. Training CAVs
 
-# Update metadata with optimal windows
-python update_windows.py \
-    --data-dir ./tcav_data \
-    --window-sizes <path_to_window_sizes.json>
-```
+Train Concept Activation Vectors for protein motifs:
 
-### 1.4 Train CAV Vectors
 ```bash
 python batch_train_cavs.py \
-    --data-dir ./tcav_data \
-    --output-dir ./tcav_outputs_650m \
-    --model-name esm2_t33_650M_UR50D \
-    --layers 22 \
-    --device cuda
-```
-Trains TCAV vectors for all motifs at specified layer(s).
-
-**Output**: `tcav_outputs_650m/cavs/{motif_id}/L{layer}_concept_v1.npy` and scalers
-
----
-
-## Phase 2: Test Detection
-
-### 2.1 Collect Test Data
-```bash
-python collect_test_data.py
-```
-Collects held-out test proteins (not in training set) with ground truth annotations.
-
-**Output**: `test_data/{motif_id}/test_100.jsonl`
-
-### 2.2 (Optional) Create Small Test Set
-```bash
-python create_small_test_set.py \
-    --input-dir ./test_data \
-    --output-dir ./test_data_small \
-    --n-samples 10 \
-    --max-length 1000
+  --data-dir ./tcav_data \
+  --config esm2_tcav/config.yaml \
+  --output-dir ./tcav_outputs_esmplusplus_all \
+  --model ESMplusplus_large \
+  --layers 20 25 30 35 \
+  --batch-size 8
 ```
 
-### 2.3 Run Detection (On-the-Fly Embedding - Recommended)
-```bash
-python run_test_detection_onthefly.py \
-    --test-data-dir ./test_data \
-    --tcav-dir ./tcav_outputs_650m \
-    --data-dir ./tcav_data \
-    --model-name esm2_t33_650M_UR50D \
-    --layers 22 \
-    --rank-by score \
-    --rank-by-layer 22 \
-    --topk 20 \
-    --device cuda \
-    --output-file ./test_detection_results.json
-```
+**Options:**
+- `--data-dir`: Directory containing positive/negative training examples
+- `--model`: PLM to use (ESMplusplus_large, ESM2_t33_650M_UR50D, ESMC_600M, etc.)
+- `--layers`: Which transformer layers to extract representations from
+- `--skip-random-cavs`: Skip random baseline CAVs
+- `--no-save-embeddings`: Don't save intermediate embeddings (saves disk space)
 
-**Alternative: Pre-computed Embeddings**
-```bash
-# Step 1: Generate embeddings (if needed)
-python esm2_tcav/scripts/run_embed.py \
-    --test-data-dir ./test_data \
-    --output-dir ./test_data/embeddings \
-    --model-name esm2_t33_650M_UR50D \
-    --layers 22 \
-    --device cuda
+### 2. Detecting Motifs in Sequences
 
-# Step 2: Run detection on cached embeddings
+Detect motifs in your protein sequences:
+
+```bash
 python batch_detect_all_motifs.py \
-    --embeddings-dir ./test_data/embeddings \
-    --tcav-dir ./tcav_outputs_650m \
-    --layers 22 \
-    --output-file ./test_detection_results.json
+  --fasta my_protein.fasta \
+  --tcav-dir ./tcav_outputs_esmplusplus_all \
+  --data-dir ./tcav_data \
+  --model-name ESMplusplus_large \
+  --layers 25 \
+  --rank-by-layer 25 \
+  --rank-by score \
+  --topk 100 \
+  --device cuda
 ```
 
-**Output**: `test_detection_results.json` with all predictions
+**Options:**
+- `--fasta`: Input FASTA file with protein sequences
+- `--tcav-dir`: Directory containing trained CAVs
+- `--motifs`: Specific motifs to detect (default: all available)
+- `--layers`: Layers to use for detection
+- `--rank-by-layer`: Which layer to use for ranking results
+- `--rank-by`: Ranking method (`score` or `position`)
+- `--topk`: Number of top predictions to return
+- `--window-scores-dir`: Directory to save detailed window scores
 
----
-
-## Phase 3: Post-Processing & Evaluation
-
-### 3.1 Remove Duplicates/Overlaps (NMS)
+**Example: Detect specific motifs**
 ```bash
-python preprocess_detections.py \
-    --input test_detection_results.json \
-    --output test_detection_results_cleaned.json \
-    --iou-threshold 0.3
+python batch_detect_all_motifs.py \
+  --fasta Q9NHV9.fasta \
+  --motifs PF00017 PF00018 PF00130 PF00621 \
+  --model-name ESMplusplus_large \
+  --tcav-dir ./tcav_outputs_esmplusplus_all \
+  --layers 25 \
+  --rank-by-layer 25 \
+  --rank-by score
 ```
 
-**Parameters**:
-- `--iou-threshold`: IoU overlap threshold (0.3 = aggressive, 0.5 = conservative)
-- `--filter-negative`: Optional flag to remove negative scores (default: keep all)
+### 3. Evaluating on Test Dataset
 
-**Output**: `test_detection_results_cleaned.json`
+Evaluate detection performance on benchmark data:
 
-### 3.2 Expand Intervals (Greedy Optimization)
-```bash
-python expand_intervals.py \
-    --detection-results test_detection_results_cleaned.json \
-    --test-data-dir ./test_data \
-    --tcav-dir ./tcav_outputs_650m \
-    --model-name esm2_t33_650M_UR50D \
-    --layer 22 \
-    --expansion-step 5 \
-    --device cuda \
-    --output expanded_predictions.json
-```
-
-**Parameters**:
-- `--expansion-step`: Residues to expand per iteration (5 = balanced, 1 = fine-grain, 10 = coarse)
-- `--max-length`: Maximum interval size (default: 500)
-- `--score-threshold`: Minimum improvement to continue (default: 0.01)
-- `--max-iterations`: Stop after N iterations (default: 50)
-
-**Output**: `expanded_predictions.json` with optimized intervals
-
-### 3.3 Evaluate Performance
-```bash
-python evaluate_metrics.py \
-    --detection-results expanded_predictions.json \
-    --output-dir ./evaluation_results \
-    --k-max 20 \
-    --overlap-thresholds 80.0 85.0 90.0 95.0 100.0
-```
-
-**Output**: Metrics tables (Precision, Recall, F1, IoU) per motif and overall
-
----
-
-## HPC Commands (SLURM Examples)
-
-### Full Pipeline on HPC
-
-**1. Train CAVs**
-```bash
-sbatch esm2_tcav/slurm/full_pipeline.slurm
-# Or individual steps:
-sbatch esm2_tcav/slurm/embed.slurm
-sbatch esm2_tcav/slurm/train_cav.slurm
-```
-
-**2. Run Detection**
 ```bash
 python run_test_detection_onthefly.py \
-    --test-data-dir ./test_data_small \
-    --tcav-dir ./tcav_outputs_650m \
-    --data-dir ./tcav_data \
-    --model-name esm2_t33_650M_UR50D \
-    --layers 22 \
-    --rank-by score \
-    --device cuda \
-    --output-file test_detection_results.json
+  --test-data-dir ./test_data_small \
+  --tcav-dir ./tcav_outputs_esmplusplus_all \
+  --data-dir ./tcav_data \
+  --model-name ESMplusplus_large \
+  --layers 25 \
+  --rank-by score \
+  --device cuda
 ```
 
-**3. Post-Process & Evaluate**
-```bash
-# Preprocess
-python preprocess_detections.py \
-    --input test_detection_results.json \
-    --output test_detection_results_cleaned.json \
-    --iou-threshold 0.3
+## Data Format
 
-# Expand
-python expand_intervals.py \
-    --detection-results test_detection_results_cleaned.json \
-    --test-data-dir ./test_data_small \
-    --tcav-dir ./tcav_outputs_650m \
-    --model-name esm2_t33_650M_UR50D \
-    --layer 22 \
-    --device cuda \
-    --output expanded_predictions.json
+### Training Data (`tcav_data/`)
+Each motif requires:
+- `{motif_id}_pos.fasta`: Positive examples containing the motif
+- `{motif_id}_pos.jsonl`: Annotations with motif locations
+- `{motif_id}_neg.fasta`: Negative examples without the motif
+- `{motif_id}_neg.jsonl`: Negative example metadata
 
-# Evaluate
-python evaluate_metrics.py \
-    --detection-results expanded_predictions.json \
-    --output-dir ./evaluation_results
-```
+### Test Data
+- `{protein_id}.fasta`: Test protein sequences
+- `{protein_id}.jsonl`: Ground truth motif annotations
 
----
+## Models Supported
 
-## Key Files & Formats
+- **ESM++** (ESMplusplus_large) - Recommended for best performance
+- **ESM2** (ESM2_t33_650M_UR50D, ESM2_t36_3B_UR50D)
+- **ESM-C** (ESMC_300M, ESMC_600M)
 
-### Training Data (`tcav_data/{motif_id}/`)
-- `pos_100.jsonl`: Positive samples (proteins with motif)
-- `neg_100.jsonl`: Negative samples (proteins without motif)
-- `metadata.json`: Motif metadata (window_length, description, etc.)
+Configure models in `esm2_tcav/models/model_registry.yaml`
 
-### Test Data (`test_data/{motif_id}/`)
-- `test_100.jsonl`: Test proteins with ground truth annotations
+## Output
 
-### Detection Results
-```json
-{
-  "n_proteins": 356,
-  "n_motifs": 72,
-  "topk": 20,
-  "results": [
-    {
-      "accession": "P12345",
-      "predictions": [
-        {
-          "motif_id": "PF00001",
-          "span": [10, 100],
-          "ranking_score": 5.23,
-          "per_layer_scores": {"L22": 5.23}
-        }
-      ],
-      "ground_truth": [
-        {
-          "motif_id": "PF00001",
-          "start": 15,
-          "end": 95
-        }
-      ]
-    }
-  ]
-}
-```
-
----
-
-## Dependencies
-
-See `esm2_tcav/requirements.txt` for full list. Key dependencies:
-- `torch`
-- `transformers` (ESM2 models)
-- `scikit-learn` (TCAV training)
-- `numpy`, `pandas`
-- `tqdm`, `joblib`
-
-Install:
-```bash
-pip install -r esm2_tcav/requirements.txt
-```
-
----
-
-## Notes
-
-- **Layer Selection**: Layer 22 works well for ESM2-650M. Experiment with different layers if needed.
-- **Window Sizes**: Each motif has an optimal window size based on its typical length.
-- **IoU Threshold**: 0.3 is aggressive (removes more overlaps), 0.5 is conservative.
-- **Expansion**: Greedy expansion refines boundaries to maximize TCAV scores.
-- **Device**: Use `cuda` for GPU acceleration (highly recommended).
-
----
+Detection results include:
+- Top-k motif predictions per sequence
+- Confidence scores based on CAV inner products
+- Precise sequence position ranges
+- Layer-wise scores for analysis
 
 ## Citation
 
-If you use this pipeline, please cite:
-- ESM2: https://github.com/facebookresearch/esm
-- TCAV: https://arxiv.org/abs/1711.11279
-
----
-
-## Troubleshooting
-
-**Out of Memory**: Reduce batch size, use smaller model, or switch to CPU
-**No CAV artifacts found**: Check that `batch_train_cavs.py` completed successfully
-**Sequence not found**: Ensure `collect_test_data.py` was run before detection
-**Slow expansion**: Use larger `--expansion-step` or reduce `--max-iterations`
+If you use this code, please cite our paper:
+```
+[Citation information to be added]
+```
 

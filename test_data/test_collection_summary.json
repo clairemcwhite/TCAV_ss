@@ -1,0 +1,501 @@
+{
+  "stats": {
+    "total_motifs": 81,
+    "successful": 81,
+    "failed": 0,
+    "total_samples": 4033,
+    "excluded_training_proteins": 7926,
+    "per_motif_counts": {
+      "PF00001": 50,
+      "PF00002": 50,
+      "PF00003": 50,
+      "PF00004": 50,
+      "PF00005": 50,
+      "PF00008": 50,
+      "PF00010": 50,
+      "PF00012": 50,
+      "PF00013": 50,
+      "PF00017": 50,
+      "PF00018": 50,
+      "PF00019": 50,
+      "PF00023": 50,
+      "PF00025": 50,
+      "PF00026": 50,
+      "PF00028": 50,
+      "PF00031": 50,
+      "PF00036": 50,
+      "PF00041": 50,
+      "PF00046": 50,
+      "PF00047": 50,
+      "PF00067": 50,
+      "PF00069": 50,
+      "PF00071": 50,
+      "PF00072": 50,
+      "PF00076": 50,
+      "PF00083": 50,
+      "PF00089": 50,
+      "PF00092": 50,
+      "PF00096": 50,
+      "PF00098": 50,
+      "PF00102": 50,
+      "PF00106": 50,
+      "PF00107": 50,
+      "PF00109": 50,
+      "PF00112": 50,
+      "PF00130": 50,
+      "PF00141": 50,
+      "PF00144": 50,
+      "PF00149": 50,
+      "PF00153": 50,
+      "PF00155": 50,
+      "PF00168": 50,
+      "PF00169": 50,
+      "PF00170": 50,
+      "PF00171": 50,
+      "PF00249": 50,
+      "PF00271": 50,
+      "PF00313": 50,
+      "PF00400": 50,
+      "PF00413": 50,
+      "PF00433": 50,
+      "PF00439": 50,
+      "PF00515": 50,
+      "PF00520": 50,
+      "PF00536": 50,
+      "PF00560": 50,
+      "PF00575": 50,
+      "PF00595": 50,
+      "PF00614": 50,
+      "PF00616": 50,
+      "PF00621": 50,
+      "PF00628": 50,
+      "PF00698": 50,
+      "PF00788": 50,
+      "PF00822": 50,
+      "PF00856": 50,
+      "PF00891": 50,
+      "PF01209": 50,
+      "PF01381": 50,
+      "PF01423": 50,
+      "PF01650": 33,
+      "PF07645": 50,
+      "PF07654": 50,
+      "PF07679": 50,
+      "PF07714": 50,
+      "PF07716": 50,
+      "PF12796": 50,
+      "PF13855": 50,
+      "PF13894": 50,
+      "PF13912": 50
+    }
+  },
+  "results": {
+    "PF00001": {
+      "n_samples": 50,
+      "status": "skipped_existing"
+    },
+    "PF00002": {
+      "n_samples": 50,
+      "status": "skipped_existing"
+    },
+    "PF00003": {
+      "n_samples": 50,
+      "status": "skipped_existing"
+    },
+    "PF00004": {
+      "n_samples": 50,
+      "status": "skipped_existing"
+    },
+    "PF00005": {
+      "n_samples": 50,
+      "status": "skipped_existing"
+    },
+    "PF00008": {
+      "n_samples": 50,
+      "status": "skipped_existing"
+    },
+    "PF00010": {
+      "n_samples": 50,
+      "status": "skipped_existing"
+    },
+    "PF00012": {
+      "n_samples": 50,
+      "status": "skipped_existing"
+    },
+    "PF00013": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00017": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00018": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00019": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00023": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00025": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00026": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00028": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00031": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00036": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00041": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00046": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00047": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00067": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00069": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00071": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00072": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00076": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00083": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00089": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00092": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00096": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00098": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00102": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00106": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00107": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00109": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00112": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00130": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00141": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00144": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00149": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00153": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00155": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00168": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00169": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00170": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00171": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00249": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00271": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00313": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00400": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00413": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00433": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00439": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00515": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00520": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00536": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00560": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00575": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00595": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00614": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00616": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00621": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00628": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00698": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00788": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00822": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00856": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF00891": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF01209": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF01381": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF01423": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF01650": {
+      "n_samples": 33,
+      "status": "success"
+    },
+    "PF07645": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF07654": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF07679": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF07714": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF07716": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF12796": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF13855": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF13894": {
+      "n_samples": 50,
+      "status": "success"
+    },
+    "PF13912": {
+      "n_samples": 50,
+      "status": "success"
+    }
+  },
+  "trained_motifs": [
+    "PF00001",
+    "PF00002",
+    "PF00003",
+    "PF00004",
+    "PF00005",
+    "PF00008",
+    "PF00010",
+    "PF00012",
+    "PF00013",
+    "PF00017",
+    "PF00018",
+    "PF00019",
+    "PF00023",
+    "PF00025",
+    "PF00026",
+    "PF00028",
+    "PF00031",
+    "PF00036",
+    "PF00041",
+    "PF00046",
+    "PF00047",
+    "PF00067",
+    "PF00069",
+    "PF00071",
+    "PF00072",
+    "PF00076",
+    "PF00083",
+    "PF00089",
+    "PF00092",
+    "PF00096",
+    "PF00098",
+    "PF00102",
+    "PF00106",
+    "PF00107",
+    "PF00109",
+    "PF00112",
+    "PF00130",
+    "PF00141",
+    "PF00144",
+    "PF00149",
+    "PF00153",
+    "PF00155",
+    "PF00168",
+    "PF00169",
+    "PF00170",
+    "PF00171",
+    "PF00249",
+    "PF00271",
+    "PF00313",
+    "PF00400",
+    "PF00413",
+    "PF00433",
+    "PF00439",
+    "PF00515",
+    "PF00520",
+    "PF00536",
+    "PF00560",
+    "PF00575",
+    "PF00595",
+    "PF00614",
+    "PF00616",
+    "PF00621",
+    "PF00628",
+    "PF00698",
+    "PF00788",
+    "PF00822",
+    "PF00856",
+    "PF00891",
+    "PF01209",
+    "PF01381",
+    "PF01423",
+    "PF01650",
+    "PF07645",
+    "PF07654",
+    "PF07679",
+    "PF07714",
+    "PF07716",
+    "PF12796",
+    "PF13855",
+    "PF13894",
+    "PF13912"
+  ]
+}

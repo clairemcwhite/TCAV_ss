@@ -1,7 +1,6 @@
 """
-CAV training module with random CAVs and versioned artifacts.
+CAV training module with versioned artifacts.
 
-Core feature #4: Random CAV generation and comparison
 Core feature #7: Versioned preprocessing artifacts
 """
 
@@ -129,81 +128,6 @@ def train_concept_cav(
     return clf, metrics
 
 
-def train_random_cavs(
-    X_train: np.ndarray,
-    y_train: np.ndarray,
-    n_random: int = 20,
-    random_mode: str = "label_shuffle",
-    C: float = 1.0,
-    random_seed_base: int = 42
-) -> Tuple[List[LogisticRegression], List[float]]:
-    """
-    Train random control CAVs.
-    
-    Core feature #4: Random CAV generation with configurable strategy
-    
-    Args:
-        X_train: Training embeddings
-        y_train: True labels
-        n_random: Number of random CAVs to train
-        random_mode: "label_shuffle", "feature_permute", or "gaussian_noise"
-        C: Regularization strength
-        random_seed_base: Base seed (each CAV gets seed+i)
-        
-    Returns:
-        Tuple of (random_models, random_aurocs)
-    """
-    random_models = []
-    random_aurocs = []
-    
-    logger.info(f"Training {n_random} random CAVs (mode: {random_mode})...")
-    
-    for i in range(n_random):
-        seed = random_seed_base + i
-        np.random.seed(seed)
-        
-        # Generate random labels/features based on mode
-        if random_mode == "label_shuffle":
-            # Shuffle labels (preserves class balance)
-            y_random = np.random.permutation(y_train)
-            X_random = X_train
-            
-        elif random_mode == "feature_permute":
-            # Permute each feature independently
-            X_random = np.random.permutation(X_train)
-            y_random = y_train
-            
-        elif random_mode == "gaussian_noise":
-            # Replace with Gaussian noise matching statistics
-            X_random = np.random.randn(*X_train.shape)
-            X_random = X_random * X_train.std(axis=0) + X_train.mean(axis=0)
-            y_random = y_train
-        else:
-            raise ValueError(f"Unknown random_mode: {random_mode}")
-        
-        # Train random CAV
-        clf_random = LogisticRegression(
-            C=C,
-            max_iter=1000,
-            random_state=seed,
-            solver='lbfgs'
-        )
-        clf_random.fit(X_random, y_random)
-        
-        # Evaluate on ORIGINAL data/labels
-        y_pred_proba = clf_random.predict_proba(X_train)[:, 1]
-        auroc = roc_auc_score(y_train, y_pred_proba)
-        
-        random_models.append(clf_random)
-        random_aurocs.append(auroc)
-    
-    logger.info(
-        f"Random CAVs AUROC: "
-        f"{np.mean(random_aurocs):.3f} ± {np.std(random_aurocs):.3f} "
-        f"(expected ~0.50)"
-    )
-    
-    return random_models, random_aurocs
 
 
 def extract_cav_vector(model: LogisticRegression) -> np.ndarray:
@@ -244,11 +168,9 @@ def save_cav_artifacts(
     layer: int,
     output_dir: str,
     concept_cav: np.ndarray,
-    random_cavs: List[np.ndarray],
     scaler: Any,
     pca: Optional[Any],
     concept_metrics: Dict,
-    random_aurocs: List[float],
     config: Dict,
     artifact_version: str = "v1"
 ) -> None:
@@ -261,11 +183,9 @@ def save_cav_artifacts(
         layer: Layer number
         output_dir: Output directory
         concept_cav: Concept CAV vector
-        random_cavs: List of random CAV vectors
         scaler: Fitted scaler
         pca: Fitted PCA (or None)
         concept_metrics: Concept CAV metrics
-        random_aurocs: Random CAV AUROCs
         config: Training configuration
         artifact_version: Version string
     """
@@ -277,11 +197,6 @@ def save_cav_artifacts(
     # Save concept CAV
     concept_file = output_path / f"{layer_prefix}_concept_{artifact_version}.npy"
     np.save(concept_file, concept_cav)
-    
-    # Save random CAVs
-    for i, random_cav in enumerate(random_cavs):
-        random_file = output_path / f"{layer_prefix}_random_{i:02d}_{artifact_version}.npy"
-        np.save(random_file, random_cav)
     
     # Save scaler
     scaler_file = output_path / f"{layer_prefix}_scaler_{artifact_version}.pkl"
@@ -301,16 +216,6 @@ def save_cav_artifacts(
         
         # Concept CAV metrics
         'concept_metrics': concept_metrics,
-        
-        # Random CAV statistics
-        'random_cav_stats': {
-            'n_random_cavs': len(random_cavs),
-            'auroc_mean': float(np.mean(random_aurocs)),
-            'auroc_std': float(np.std(random_aurocs)),
-            'auroc_min': float(np.min(random_aurocs)),
-            'auroc_max': float(np.max(random_aurocs)),
-            'aurocs': random_aurocs
-        },
         
         # Training config
         'config': config,
@@ -334,7 +239,6 @@ def save_cav_artifacts(
     
     logger.info(f"✓ Saved CAV artifacts for {layer_prefix}:")
     logger.info(f"  - Concept CAV: {concept_file}")
-    logger.info(f"  - Random CAVs: {len(random_cavs)} files")
     logger.info(f"  - Scaler: {scaler_file}")
     if pca_file:
         logger.info(f"  - PCA: {pca_file}")
@@ -360,13 +264,8 @@ def create_manifest(layer: int, output_dir: Path, version: str) -> None:
         'concept_cav': f"{prefix}_concept_{version}.npy",
         'scaler': f"{prefix}_scaler_{version}.pkl",
         'pca': f"{prefix}_pca_{version}.pkl",
-        'report': f"{prefix}_report_{version}.json",
-        'random_cavs': []
+        'report': f"{prefix}_report_{version}.json"
     }
-    
-    # Find random CAV files
-    for f in output_dir.glob(f"{prefix}_random_*_{version}.npy"):
-        artifact_files['random_cavs'].append(f.name)
     
     # Check existence and compute sizes
     manifest = {
@@ -377,8 +276,6 @@ def create_manifest(layer: int, output_dir: Path, version: str) -> None:
     }
     
     for key, filename in artifact_files.items():
-        if key == 'random_cavs':
-            continue
         filepath = output_dir / filename
         if filepath.exists():
             manifest['files'][key] = {
@@ -386,15 +283,6 @@ def create_manifest(layer: int, output_dir: Path, version: str) -> None:
                 'size_bytes': filepath.stat().st_size,
                 'exists': True
             }
-    
-    # Add random CAVs
-    manifest['files']['random_cavs'] = []
-    for filename in sorted(artifact_files['random_cavs']):
-        filepath = output_dir / filename
-        manifest['files']['random_cavs'].append({
-            'filename': filename,
-            'size_bytes': filepath.stat().st_size
-        })
     
     # Save manifest
     manifest_file = output_dir / f"{prefix}_manifest_{version}.json"
@@ -453,19 +341,6 @@ def train_layer_cavs(
     
     concept_cav = extract_cav_vector(concept_model)
     
-    # Train random CAVs
-    logger.info("Training random CAVs...")
-    random_models, random_aurocs = train_random_cavs(
-        X_scaled,
-        y,
-        n_random=config.get('n_random_cavs', 20),
-        random_mode=config.get('random_mode', 'label_shuffle'),
-        C=config.get('regularization_C', 1.0),
-        random_seed_base=config.get('random_seed_base', 42)
-    )
-    
-    random_cavs = [extract_cav_vector(m) for m in random_models]
-    
     # Add preprocessing metadata to metrics
     concept_metrics.update(preprocess_meta)
     
@@ -474,14 +349,13 @@ def train_layer_cavs(
         layer=layer,
         output_dir=output_dir,
         concept_cav=concept_cav,
-        random_cavs=random_cavs,
         scaler=scaler,
         pca=pca,
         concept_metrics=concept_metrics,
-        random_aurocs=random_aurocs,
         config=config,
         artifact_version=artifact_version
     )
     
     logger.info(f"✓ Layer {layer} complete!\n")
+
 

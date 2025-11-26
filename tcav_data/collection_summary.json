@@ -1,0 +1,578 @@
+{
+  "total_motifs": 81,
+  "successful": 7,
+  "skipped": 74,
+  "insufficient_data": 0,
+  "failed": 0,
+  "total_positives_collected": 8100,
+  "total_negatives_collected": 8044,
+  "results": [
+    {
+      "motif_id": "PF00096",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00010",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00046",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00170",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00249",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00313",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00072",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00856",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00439",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00628",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF13912",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF13894",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00069",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF07714",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00433",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00102",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00149",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00112",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00413",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF01650",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00089",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00891",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00026",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00067",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00698",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF01209",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00155",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00005",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00083",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00004",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00144",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00018",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00153",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00017",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00536",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00595",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00169",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00614",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF07645",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00019",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00041",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00001",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00515",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00400",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00047",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00560",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00023",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF12796",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00013",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF13855",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00130",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00168",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00071",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00616",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00025",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00621",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00788",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00002",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00003",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00008",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00028",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00822",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00012",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00520",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00098",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00076",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF01423",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00271",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00575",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00031",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF07679",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF07654",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00092",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 100
+    },
+    {
+      "motif_id": "PF00106",
+      "status": "skipped",
+      "reason": "already_collected",
+      "positives": 100,
+      "negatives": 44
+    },
+    {
+      "motif_id": "PF00107",
+      "status": "success",
+      "positives": 100,
+      "negatives": 100,
+      "elapsed_seconds": 286.9439399242401
+    },
+    {
+      "motif_id": "PF00171",
+      "status": "success",
+      "positives": 100,
+      "negatives": 100,
+      "elapsed_seconds": 312.68963742256165
+    },
+    {
+      "motif_id": "PF07716",
+      "status": "success",
+      "positives": 100,
+      "negatives": 100,
+      "elapsed_seconds": 318.6045296192169
+    },
+    {
+      "motif_id": "PF01381",
+      "status": "success",
+      "positives": 100,
+      "negatives": 100,
+      "elapsed_seconds": 321.59132647514343
+    },
+    {
+      "motif_id": "PF00036",
+      "status": "success",
+      "positives": 100,
+      "negatives": 100,
+      "elapsed_seconds": 324.6867218017578
+    },
+    {
+      "motif_id": "PF00109",
+      "status": "success",
+      "positives": 100,
+      "negatives": 100,
+      "elapsed_seconds": 154.00646448135376
+    },
+    {
+      "motif_id": "PF00141",
+      "status": "success",
+      "positives": 100,
+      "negatives": 100,
+      "elapsed_seconds": 135.95890283584595
+    }
+  ]
+}
