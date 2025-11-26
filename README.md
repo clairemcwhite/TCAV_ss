@@ -56,7 +56,6 @@ python batch_train_cavs.py \
 - `--data-dir`: Directory containing positive/negative training examples
 - `--model`: PLM to use (ESMplusplus_large, ESM2_t33_650M_UR50D, ESMC_600M, etc.)
 - `--layers`: Which transformer layers to extract representations from
-- `--skip-random-cavs`: Skip random baseline CAVs
 - `--no-save-embeddings`: Don't save intermediate embeddings (saves disk space)
 
 ### 2. Detecting Motifs in Sequences
@@ -95,7 +94,8 @@ python batch_detect_all_motifs.py \
   --tcav-dir ./tcav_outputs_esmplusplus_all \
   --layers 25 \
   --rank-by-layer 25 \
-  --rank-by score
+  --rank-by score \
+  --device cuda
 ```
 
 ### 3. Evaluating on Test Dataset
