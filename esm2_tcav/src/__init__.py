@@ -1,5 +1,5 @@
-"""TCAV + ESM2 Pipeline for Zinc Finger Motif Detection"""
+"""TCAV — Concept Activation Vector training and attribution"""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 
