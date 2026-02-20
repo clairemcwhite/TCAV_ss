@@ -51,8 +51,8 @@ def main():
     )
     parser.add_argument('--pkl', required=True,
                         help='Path to .pkl embedding file')
-    parser.add_argument('--info', required=True,
-                        help='Path to .pkl.info file')
+    parser.add_argument('--info', default=None,
+                        help='Path to ID file (auto-discovered if omitted)')
     parser.add_argument('--cav-dir', required=True,
                         help='Directory containing trained CAV artifacts')
     parser.add_argument('--out', required=True,
