@@ -39,37 +39,71 @@ logger = logging.getLogger(__name__)
 # Embedding pkl loading
 # ---------------------------------------------------------------------------
 
+def _find_info_file(pkl_path: Path) -> Path:
+    """
+    Auto-discover the companion ID file for a pkl.
+    Tries extensions in order: .seqnames, .info, .pkl.info
+    """
+    candidates = [
+        pkl_path.with_suffix('.seqnames'),          # foo.pkl.seqnames
+        Path(str(pkl_path) + '.seqnames'),           # foo.pkl → foo.pkl.seqnames
+        pkl_path.with_suffix('.info'),               # foo.pkl.info (if .pkl is last suffix)
+        Path(str(pkl_path) + '.info'),               # foo.pkl → foo.pkl.info
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(
+        f"Could not find a companion ID file for {pkl_path}. "
+        f"Tried: {[str(c) for c in candidates]}"
+    )
+
+
+def _read_ids(info_path: Path) -> List[str]:
+    ids = []
+    with open(info_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                ids.append(line)
+    return ids
+
+
 def load_embeddings_pkl(
     pkl_path: str,
-    info_path: str
+    info_path: str = None
 ) -> Tuple[Dict[str, np.ndarray], List[str]]:
     """
-    Load embedding pkl and companion info file.
+    Load embedding pkl and companion ID file.
 
     Args:
         pkl_path:  Path to .pkl file containing embedding arrays.
-        info_path: Path to .pkl.info file with one sample ID per line.
+        info_path: Path to companion ID file (one sample ID per line).
+                   If omitted, auto-discovered by trying .seqnames then .info
+                   extensions next to the pkl.
 
     Returns:
         Tuple of (embeddings_dict, sample_ids)
         embeddings_dict has keys "sequence_embeddings" and/or "aa_embeddings".
     """
+    pkl_path = Path(pkl_path)
+
+    if info_path is None:
+        info_path = _find_info_file(pkl_path)
+    else:
+        info_path = Path(info_path)
+
     with open(pkl_path, 'rb') as f:
         embeddings = pickle.load(f)
 
-    sample_ids = []
-    with open(info_path, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                sample_ids.append(line)
+    sample_ids = _read_ids(info_path)
 
     # Validate row counts
     for key, arr in embeddings.items():
         if len(arr) != len(sample_ids):
             raise ValueError(
-                f"{key}: array has {len(arr)} rows but info file has "
-                f"{len(sample_ids)} IDs"
+                f"{key}: array has {len(arr)} rows but ID file has "
+                f"{len(sample_ids)} IDs ({info_path})"
             )
 
     logger.info(
@@ -77,6 +111,32 @@ def load_embeddings_pkl(
         f"(keys: {list(embeddings.keys())})"
     )
     return embeddings, sample_ids
+
+
+def load_sequence_embeddings(
+    pkl_path: str,
+    info_path: str = None
+) -> Tuple[np.ndarray, List[str]]:
+    """
+    Convenience loader for pkls that contain only sequence_embeddings.
+    Returns the embedding matrix and sample IDs directly.
+
+    Args:
+        pkl_path:  Path to .pkl file.
+        info_path: Path to companion ID file (auto-discovered if omitted).
+
+    Returns:
+        Tuple of (embeddings array of shape (n, hidden_dim), sample_ids list)
+    """
+    embeddings, sample_ids = load_embeddings_pkl(pkl_path, info_path)
+
+    if 'sequence_embeddings' not in embeddings:
+        raise ValueError(
+            f"{pkl_path} does not contain 'sequence_embeddings'. "
+            f"Available keys: {list(embeddings.keys())}"
+        )
+
+    return embeddings['sequence_embeddings'], sample_ids
 
 
 # ---------------------------------------------------------------------------
