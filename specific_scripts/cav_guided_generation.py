@@ -62,7 +62,7 @@ from pathlib import Path
 import numpy as np
 import joblib
 import torch
-from transformers import AutoTokenizer, AutoModelForMaskedLM
+from transformers import AutoModelForMaskedLM
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -202,11 +202,14 @@ def generate(
         logger.info(f"Using device: {device}")
 
     # ------------------------------------------------------------------
-    # 1. Load tokenizer and model
+    # 1. Load model and tokenizer
+    #    ESMplusplus exposes its tokenizer as model.tokenizer rather than
+    #    through AutoTokenizer, so we load the model first and pull the
+    #    tokenizer from it.
     # ------------------------------------------------------------------
-    logger.info(f"Loading tokenizer and model from {model_path}")
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
-    model = AutoModelForMaskedLM.from_pretrained(model_path)
+    logger.info(f"Loading model from {model_path}")
+    model = AutoModelForMaskedLM.from_pretrained(model_path, trust_remote_code=True)
+    tokenizer = model.tokenizer
     model.eval()
     model.to(device)
 
