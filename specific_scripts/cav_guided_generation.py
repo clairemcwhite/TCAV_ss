@@ -145,26 +145,25 @@ def load_and_backproject_cav(cav_dir: str, version: str = 'v1') -> np.ndarray:
 # Forward-hook factory
 # ---------------------------------------------------------------------------
 
-def make_layer_hook(cav_tensor: torch.Tensor,
+def make_layer_hook(cav_chunk: torch.Tensor,
                     mask_positions: list[int],
                     cav_weight: float):
     """
-    Return a forward hook that adds cav_weight * cav_tensor to hidden states
-    at mask_positions after each transformer layer.
+    Return a forward hook that adds cav_weight * cav_chunk to hidden states
+    at mask_positions after a transformer block.
 
-    The hook expects the layer output to be a tuple whose first element is the
-    hidden-state tensor (batch, seq_len, hidden_dim).  This matches both
-    EsmLayer and the standard HuggingFace transformer layer convention.
+    cav_chunk must match the block's hidden_dim (e.g. 1152 for ESMplusplus).
+
+    ESMplusplus UnifiedTransformerBlock returns (hidden_state, attn_weights);
+    hidden_state shape: (batch, seq_len, hidden_dim).
     """
     def hook(module, input, output):
-        # output is a tuple; output[0] is the hidden state
         if isinstance(output, tuple):
             hidden = output[0]
-            hidden[:, mask_positions, :] += cav_weight * cav_tensor
+            hidden[:, mask_positions, :] += cav_weight * cav_chunk
             return (hidden,) + output[1:]
         else:
-            # Fallback: output is a plain tensor
-            output[:, mask_positions, :] += cav_weight * cav_tensor
+            output[:, mask_positions, :] += cav_weight * cav_chunk
             return output
     return hook
 
@@ -264,25 +263,24 @@ def generate(
     logger.info(f"Found {len(mask_positions)} mask token positions in token sequence")
 
     # ------------------------------------------------------------------
-    # 5. Back-project CAV to full hidden-state space
+    # 5. Back-project CAV and prepare injection tensor
+    #
+    # The CAV may have been trained on concatenated multi-layer embeddings
+    # (e.g. 4 × 1152 = 4608 dims).  The transformer block hidden dim is
+    # 1152, so we take the last 1152 dims of the back-projected vector as
+    # a reasonable approximation — the last extracted layer (-9) tends to
+    # carry the most task-relevant information.  If the CAV was trained on
+    # a single layer, the full vector is used as-is.
     # ------------------------------------------------------------------
     cav_fullspace = load_and_backproject_cav(cav_dir, version=version)
-    # Infer model dtype from its first parameter (works for custom models that
-    # may not expose .dtype directly as a HuggingFace PreTrainedModel property)
+
     try:
         model_dtype = next(model.parameters()).dtype
     except StopIteration:
         model_dtype = torch.float32
-    cav_tensor = torch.tensor(cav_fullspace, dtype=model_dtype).to(device)
-    logger.info(f"CAV tensor dtype: {model_dtype}")
+    logger.info(f"Model dtype: {model_dtype}")
 
-    # ------------------------------------------------------------------
-    # 6. Register forward hooks on all transformer layers
-    # ------------------------------------------------------------------
-    handles = []
-
-    # ESMplusplus uses model.transformer.blocks (UnifiedTransformerBlock).
-    # Fall back to standard HuggingFace ESM/BERT paths for other models.
+    # Locate the block list
     layer_list = None
     for attr_path in ('transformer.blocks', 'esm.encoder.layer', 'encoder.layer', 'bert.encoder.layer'):
         obj = model
@@ -290,8 +288,8 @@ def generate(
             for attr in attr_path.split('.'):
                 obj = getattr(obj, attr)
             layer_list = obj
-            logger.info(f"Found transformer layers at model.{attr_path} "
-                        f"({len(layer_list)} layers)")
+            logger.info(f"Found transformer blocks at model.{attr_path} "
+                        f"({len(layer_list)} blocks total)")
             break
         except AttributeError:
             continue
@@ -303,14 +301,35 @@ def generate(
             "Run: [name for name, _ in model.named_modules()] to find the correct path."
         )
 
-    hook_fn = make_layer_hook(cav_tensor, mask_positions, cav_weight)
-    for layer in layer_list:
-        handles.append(layer.register_forward_hook(hook_fn))
+    # Infer block hidden dim from the first block's output projection
+    # (works for ESMplusplus; falls back to full CAV dim otherwise)
+    try:
+        block_hidden_dim = layer_list[0].attn.out_proj.out_features
+    except AttributeError:
+        block_hidden_dim = cav_fullspace.shape[0]
 
-    logger.info(
-        f"Registered CAV hooks on {len(handles)} layers "
-        f"(cav_weight={cav_weight})"
-    )
+    if cav_fullspace.shape[0] > block_hidden_dim:
+        logger.info(
+            f"CAV dim ({cav_fullspace.shape[0]}) > block hidden dim ({block_hidden_dim}): "
+            f"using last {block_hidden_dim} dims (corresponding to final extracted layer)"
+        )
+        cav_inject = cav_fullspace[-block_hidden_dim:]
+    else:
+        cav_inject = cav_fullspace
+
+    cav_tensor = torch.tensor(cav_inject, dtype=model_dtype).to(device)
+    logger.info(f"CAV injection vector: shape {cav_inject.shape}, "
+                f"L2 norm = {np.linalg.norm(cav_inject):.4f}")
+
+    # ------------------------------------------------------------------
+    # 6. Register hooks on all transformer blocks
+    # ------------------------------------------------------------------
+    handles = []
+    hook_fn = make_layer_hook(cav_tensor, mask_positions, cav_weight)
+    for block in layer_list:
+        handles.append(block.register_forward_hook(hook_fn))
+
+    logger.info(f"Registered CAV hooks on {len(handles)} blocks (cav_weight={cav_weight})")
 
     # ------------------------------------------------------------------
     # 7. Single forward pass under no_grad
