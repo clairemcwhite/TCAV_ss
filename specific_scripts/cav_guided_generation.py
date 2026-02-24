@@ -214,34 +214,39 @@ def generate(
     model.to(device)
 
     # ------------------------------------------------------------------
-    # 2. Extend sequence if mask region goes beyond the natural end
+    # 2. Build the masked input sequence
+    #    If mask_end > natural sequence length, we are appending novel
+    #    residues beyond the C-terminus.  We keep sequence[:mask_start]
+    #    intact, insert (mask_end - mask_start) mask tokens, and append
+    #    whatever natural sequence remains after mask_end (may be empty).
+    #    We do NOT use tokenizer.mask_token as a character placeholder —
+    #    instead we build the masked sequence token-by-token using the
+    #    mask_token string only in the mask region.
     # ------------------------------------------------------------------
     natural_len = len(sequence)
-    if mask_end > natural_len:
-        n_extra = mask_end - natural_len
+    n_mask = mask_end - mask_start
+    n_extra = max(0, mask_end - natural_len)
+
+    if n_extra > 0:
         logger.info(
             f"mask_end ({mask_end}) > sequence length ({natural_len}): "
-            f"appending {n_extra} mask tokens to extend sequence"
+            f"generating {n_extra} novel residues beyond the natural terminus"
         )
-        sequence = sequence + tokenizer.mask_token * n_extra
 
-    # ------------------------------------------------------------------
-    # 3. Tokenize and apply mask to [mask_start, mask_end)
-    # ------------------------------------------------------------------
-    # Replace the target region with mask tokens
-    masked_seq = (
-        sequence[:mask_start]
-        + tokenizer.mask_token * (mask_end - mask_start)
-        + sequence[mask_end:]
-    )
+    # sequence[:mask_start] + <mask>×n_mask + sequence[mask_end:]
+    # (sequence[mask_end:] is '' when mask_end >= natural_len)
+    mask_str = tokenizer.mask_token * n_mask
+    masked_seq = sequence[:mask_start] + mask_str + sequence[mask_end:]
 
     inputs = tokenizer(masked_seq, return_tensors='pt').to(device)
     input_ids = inputs['input_ids']  # (1, seq_len+2) — BOS + tokens + EOS
 
+    total_len = mask_start + n_mask + max(0, natural_len - mask_end)
     logger.info(
-        f"Sequence length (after extension): {len(sequence)}, "
+        f"Natural sequence length: {natural_len}, "
+        f"output sequence length: {total_len}, "
         f"masked region: [{mask_start}, {mask_end}), "
-        f"mask length: {mask_end - mask_start}"
+        f"mask length: {n_mask}"
     )
 
     # ------------------------------------------------------------------
@@ -262,17 +267,24 @@ def generate(
     # 5. Back-project CAV to full hidden-state space
     # ------------------------------------------------------------------
     cav_fullspace = load_and_backproject_cav(cav_dir, version=version)
-    cav_tensor = torch.tensor(cav_fullspace, dtype=model.dtype).to(device)
+    # Infer model dtype from its first parameter (works for custom models that
+    # may not expose .dtype directly as a HuggingFace PreTrainedModel property)
+    try:
+        model_dtype = next(model.parameters()).dtype
+    except StopIteration:
+        model_dtype = torch.float32
+    cav_tensor = torch.tensor(cav_fullspace, dtype=model_dtype).to(device)
+    logger.info(f"CAV tensor dtype: {model_dtype}")
 
     # ------------------------------------------------------------------
     # 6. Register forward hooks on all transformer layers
     # ------------------------------------------------------------------
     handles = []
 
-    # Try the standard ESM HuggingFace path first: model.esm.encoder.layer
-    # Fall back to model.encoder.layer for other architectures
+    # ESMplusplus uses model.transformer.blocks (UnifiedTransformerBlock).
+    # Fall back to standard HuggingFace ESM/BERT paths for other models.
     layer_list = None
-    for attr_path in ('esm.encoder.layer', 'encoder.layer', 'bert.encoder.layer'):
+    for attr_path in ('transformer.blocks', 'esm.encoder.layer', 'encoder.layer', 'bert.encoder.layer'):
         obj = model
         try:
             for attr in attr_path.split('.'):
@@ -287,8 +299,8 @@ def generate(
     if layer_list is None:
         raise RuntimeError(
             "Could not locate transformer layer list. "
-            "Expected model.esm.encoder.layer or model.encoder.layer. "
-            "Please inspect the model architecture and adapt the hook registration."
+            "Tried: transformer.blocks, esm.encoder.layer, encoder.layer, bert.encoder.layer. "
+            "Run: [name for name, _ in model.named_modules()] to find the correct path."
         )
 
     hook_fn = make_layer_hook(cav_tensor, mask_positions, cav_weight)
