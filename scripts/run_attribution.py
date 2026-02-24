@@ -9,21 +9,35 @@ projects each token onto the CAV direction. Outputs a TSV with one row per
 Output columns:
     accession   — sample identifier
     position    — 0-based token index
+    name        — feature name (only present if --names is provided)
     score       — CAV projection score (higher = more concept-like)
 
 Examples
 --------
-# Score all residues in a set of proteins:
-python run_attribution.py \\
+# Score all residues in positional order:
+python scripts/run_attribution.py \\
     --pkl query_embeddings.pkl \\
-    --info query_embeddings.pkl.info \\
     --cav-dir ./cavs/my_concept/ \\
     --out attribution_scores.tsv
 
-# Restrict to a subset of samples listed in a file (one ID per line):
-python run_attribution.py \\
+# Single-cell: rank genes per cell by CAV alignment (check against marker genes):
+python scripts/run_attribution.py \\
+    --pkl cells.pkl \\
+    --cav-dir ./cavs/Tcell/ \\
+    --names gene_vocab.txt \\
+    --sort-descending \\
+    --out ranked_genes.tsv
+
+# Protein: rank residues per protein (e.g. drug binding site discovery):
+python scripts/run_attribution.py \\
+    --pkl proteins.pkl \\
+    --cav-dir ./cavs/binding_site/ \\
+    --sort-descending \\
+    --out ranked_residues.tsv
+
+# Restrict to a subset of samples:
+python scripts/run_attribution.py \\
     --pkl query_embeddings.pkl \\
-    --info query_embeddings.pkl.info \\
     --cav-dir ./cavs/my_concept/ \\
     --subset my_accessions.txt \\
     --out attribution_scores.tsv
@@ -61,6 +75,14 @@ def main():
                         help='CAV artifact version (default: v1)')
     parser.add_argument('--subset',
                         help='Optional file with one accession per line to restrict output')
+    parser.add_argument('--sort-descending', action='store_true',
+                        help='Sort output by score descending within each sample '
+                             '(default: positional order). Use for gene ranking '
+                             'in single-cell or residue ranking in proteins.')
+    parser.add_argument('--names',
+                        help='Optional file with one feature name per line '
+                             '(position index = line index). Adds a name column '
+                             'to output. E.g. gene vocabulary file for single-cell.')
     args = parser.parse_args()
 
     embeddings, sample_ids = load_embeddings_pkl(args.pkl, args.info)
@@ -86,6 +108,12 @@ def main():
     else:
         filtered_ids = sample_ids
 
+    names = None
+    if args.names:
+        with open(args.names) as f:
+            names = [line.strip() for line in f if line.strip()]
+        logger.info(f"Loaded {len(names)} feature names from {args.names}")
+
     cav_artifacts = load_cav_artifacts(args.cav_dir, version=args.version)
 
     results = compute_batch_attributions(aa_emb, filtered_ids, cav_artifacts)
@@ -95,10 +123,25 @@ def main():
 
     with open(out_path, 'w', newline='') as f:
         writer = csv.writer(f, delimiter='\t')
-        writer.writerow(['accession', 'position', 'score'])
+
+        header = ['accession', 'position']
+        if names is not None:
+            header.append('name')
+        header.append('score')
+        writer.writerow(header)
+
         for sid, scores in results:
-            for pos, score in enumerate(scores):
-                writer.writerow([sid, pos, f'{score:.6f}'])
+            rows = list(enumerate(scores))
+
+            if args.sort_descending:
+                rows = sorted(rows, key=lambda x: x[1], reverse=True)
+
+            for pos, score in rows:
+                row = [sid, pos]
+                if names is not None:
+                    row.append(names[pos] if pos < len(names) else '')
+                row.append(f'{score:.6f}')
+                writer.writerow(row)
 
     logger.info(
         f"Wrote {sum(len(s) for _, s in results)} rows "
