@@ -58,13 +58,13 @@ logger = logging.getLogger(__name__)
 # Data loading and filtering
 # ---------------------------------------------------------------------------
 
-def load_h5ad(input_path: Path) -> ad.AnnData:
+def load_h5ad(input_path):
     adata = ad.read_h5ad(input_path)
     logger.info(f"Loaded AnnData: {adata.n_obs} cells × {adata.n_vars} genes")
     return adata
 
 
-def filter_to_metadata(adata: ad.AnnData, metadata_path: Path, cell_col: str | None) -> ad.AnnData:
+def filter_to_metadata(adata, metadata_path, cell_col):
     """
     Restrict AnnData to cells listed in the metadata file.
 
