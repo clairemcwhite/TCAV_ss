@@ -103,7 +103,7 @@ def filter_to_metadata(adata, metadata_path, cell_col):
 # Normalization
 # ---------------------------------------------------------------------------
 
-def normalize(adata: sc.AnnData, target_sum: float = 1e4) -> np.ndarray:
+def normalize(adata, target_sum=1e4):
     """
     Normalize counts per cell to target_sum then log1p.
     Returns a dense (n_cells, n_genes) float32 array.
@@ -119,7 +119,7 @@ def normalize(adata: sc.AnnData, target_sum: float = 1e4) -> np.ndarray:
 # Geneformer tokenization
 # ---------------------------------------------------------------------------
 
-def load_token_dict(model_dir: Path) -> dict[str, int]:
+def load_token_dict(model_dir):
     """
     Load a Geneformer token dictionary from the model directory.
 
@@ -149,12 +149,7 @@ def load_token_dict(model_dir: Path) -> dict[str, int]:
     )
 
 
-def tokenize_cell(
-    expression: np.ndarray,
-    gene_ids: list[str],
-    token_dict: dict[str, int],
-    max_len: int,
-) -> list[int]:
+def tokenize_cell(expression, gene_ids, token_dict, max_len):
     """
     Rank genes by normalized expression (descending) and return token IDs.
     Genes with zero expression or absent from the token dictionary are skipped.
@@ -167,7 +162,7 @@ def tokenize_cell(
     genes_nz = [gene_ids[i] for i, keep in enumerate(nonzero) if keep]
     order    = np.argsort(-expr_nz)
 
-    token_ids: list[int] = []
+    token_ids = []
     for idx in order:
         tok = token_dict.get(genes_nz[idx])
         if tok is not None:
@@ -181,16 +176,7 @@ def tokenize_cell(
 # Embedding extraction
 # ---------------------------------------------------------------------------
 
-def embed_cells(
-    X: np.ndarray,
-    gene_ids: list[str],
-    token_dict: dict[str, int],
-    model_path: Path,
-    batch_size: int,
-    max_input_size: int,
-    device: str,
-    save_gene_embs: bool,
-) -> tuple[np.ndarray, np.ndarray | None]:
+def embed_cells(X, gene_ids, token_dict, model_path, batch_size, max_input_size, device, save_gene_embs):
     """
     Run all cells through the model and return embeddings.
 
@@ -356,7 +342,7 @@ def main():
     )
 
     # 6. Save .pkl + .pkl.info
-    embeddings: dict = {'sequence_embeddings': seq_embs}
+    embeddings = {'sequence_embeddings': seq_embs}
     if aa_embs is not None:
         embeddings['aa_embeddings'] = aa_embs
 
