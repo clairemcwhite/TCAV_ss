@@ -47,6 +47,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
+import anndata as ad
 import scanpy as sc
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -57,13 +58,13 @@ logger = logging.getLogger(__name__)
 # Data loading and filtering
 # ---------------------------------------------------------------------------
 
-def load_h5ad(input_path: Path) -> sc.AnnData:
-    adata = sc.read_h5ad(input_path)
+def load_h5ad(input_path: Path) -> ad.AnnData:
+    adata = ad.read_h5ad(input_path)
     logger.info(f"Loaded AnnData: {adata.n_obs} cells × {adata.n_vars} genes")
     return adata
 
 
-def filter_to_metadata(adata: sc.AnnData, metadata_path: Path, cell_col: str | None) -> sc.AnnData:
+def filter_to_metadata(adata: ad.AnnData, metadata_path: Path, cell_col: str | None) -> ad.AnnData:
     """
     Restrict AnnData to cells listed in the metadata file.
 
