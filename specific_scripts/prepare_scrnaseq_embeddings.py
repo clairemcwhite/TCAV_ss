@@ -119,16 +119,20 @@ def normalize(adata, target_sum=1e4):
 # Geneformer tokenization
 # ---------------------------------------------------------------------------
 
-def load_token_dict(model_dir):
+def load_token_dict(model_dir, token_dict_path=None):
     """
-    Load a Geneformer token dictionary from the model directory.
+    Load a Geneformer token dictionary.
 
-    Searches the model directory and one level up for any file matching
-    token_dictionary*.pkl, so it handles naming variants such as:
-      token_dictionary.pkl
-      token_dictionary_gc104M.pkl
-      token_dictionary_gc95M.pkl
+    If token_dict_path is given, loads directly from that path.
+    Otherwise searches the model directory and one level up for any file
+    matching token_dictionary*.pkl (handles gc104M, gc95M, etc. variants).
     """
+    if token_dict_path is not None:
+        with open(token_dict_path, 'rb') as f:
+            d = pickle.load(f)
+        logger.info(f"Loaded token dictionary: {len(d)} genes from {token_dict_path}")
+        return d
+
     search_dirs = [model_dir, model_dir.parent]
     for search_dir in search_dirs:
         matches = sorted(search_dir.glob('token_dictionary*.pkl'))
@@ -145,7 +149,7 @@ def load_token_dict(model_dir):
             return d
     raise FileNotFoundError(
         f"No token_dictionary*.pkl found in {model_dir} or {model_dir.parent}. "
-        "Check your model directory."
+        "Specify the path directly with --token-dict."
     )
 
 
@@ -271,6 +275,9 @@ def main():
                         help='AnnData file (.h5ad), cell × gene, gene names as Ensembl IDs.')
     parser.add_argument('--model', required=True,
                         help='Path to local Geneformer model directory (HuggingFace format).')
+    parser.add_argument('--token-dict',
+                        help='Path to token_dictionary*.pkl. If omitted, searched '
+                             'automatically within --model and its parent directory.')
     parser.add_argument('--out', required=True,
                         help='Output .pkl path (e.g. embeddings/scrnaseq/c1.pkl).')
     parser.add_argument('--metadata',
@@ -312,7 +319,7 @@ def main():
     X = normalize(adata)
 
     # 4. Token dictionary
-    token_dict = load_token_dict(Path(args.model))
+    token_dict = load_token_dict(Path(args.model), args.token_dict)
 
     # Quick sanity check: how many genes overlap with token dictionary
     n_overlap = sum(1 for g in gene_ids if g in token_dict)
