@@ -181,6 +181,7 @@ def generate(
     cav_weight: float = 0.1,
     device: str = 'cuda',
     version: str = 'v1',
+    max_length: int = 2048,
 ) -> str:
     """
     Generate residues in [mask_start, mask_end) guided by the trained CAV.
@@ -237,8 +238,18 @@ def generate(
     mask_str = tokenizer.mask_token * n_mask
     masked_seq = sequence[:mask_start] + mask_str + sequence[mask_end:]
 
-    inputs = tokenizer(masked_seq, return_tensors='pt').to(device)
-    input_ids = inputs['input_ids']  # (1, seq_len+2) — BOS + tokens + EOS
+    # ESMplusplus requires padding to max_length (2048) to produce valid
+    # predictions — without it the model outputs X for every position.
+    inputs = tokenizer.batch_encode_plus(
+        [masked_seq],
+        return_tensors='pt',
+        padding='max_length',
+        max_length=max_length,
+        truncation=True,
+        add_special_tokens=True,
+    )
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+    input_ids = inputs['input_ids']  # (1, 2048) — BOS + tokens + EOS + PAD...
 
     total_len = mask_start + n_mask + max(0, natural_len - mask_end)
     logger.info(
@@ -409,6 +420,11 @@ def main():
         '--version', default='v1',
         help='CAV artifact version (default: v1).'
     )
+    parser.add_argument(
+        '--max-length', type=int, default=2048,
+        help='Padding length passed to the tokenizer (default: 2048 for ESMplusplus). '
+             'Must match the max_length used during model training.'
+    )
     args = parser.parse_args()
 
     # Read input sequence
@@ -425,6 +441,7 @@ def main():
         cav_weight=args.cav_weight,
         device=args.device,
         version=args.version,
+        max_length=args.max_length,
     )
 
     # Build FASTA header
