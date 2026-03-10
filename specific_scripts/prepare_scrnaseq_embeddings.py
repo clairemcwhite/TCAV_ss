@@ -299,6 +299,11 @@ def main():
                         help='Also save per-gene token embeddings as aa_embeddings. '
                              'Shape: (n_cells, max_input_size, hidden_dim). '
                              'WARNING: memory-intensive for large datasets.')
+    parser.add_argument('--subsample', type=float, default=None,
+                        help='Randomly subsample this fraction of cells before embedding '
+                             '(e.g. 0.1 for 10%%). Useful for quick tests.')
+    parser.add_argument('--subsample-seed', type=int, default=42,
+                        help='Random seed for subsampling (default: 42).')
     args = parser.parse_args()
 
     out_path = Path(args.out)
@@ -310,6 +315,15 @@ def main():
     # 2. Filter to metadata (optional)
     if args.metadata:
         adata = filter_to_metadata(adata, Path(args.metadata), args.cell_col)
+
+    # 2b. Subsample (optional)
+    if args.subsample is not None:
+        import random
+        random.seed(args.subsample_seed)
+        n_keep = max(1, int(len(adata) * args.subsample))
+        idx = random.sample(range(len(adata)), n_keep)
+        adata = adata[idx].copy()
+        logger.info(f"Subsampled to {len(adata)} cells ({args.subsample:.0%})")
 
     cell_ids = list(adata.obs_names)
     gene_ids = list(adata.var_names)
