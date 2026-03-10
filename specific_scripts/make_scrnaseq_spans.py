@@ -21,8 +21,12 @@ Negatives are cells that match the contrast label(s):
   (if omitted, all non-matching cells are used as negatives)
 
 Pooled-phase convenience groups (can be used with --phases / --neg-phases):
-  proliferative  →  proliferative_early, proliferative_late
-  secretory      →  secretory_early, secretory_mid, secretory_late
+  proliferative  →  proliferative, proliferative_early, proliferative_late
+  secretory      →  secretory_early, secretory_early-mid, secretory_mid, secretory_late
+
+  The group names include both C1 dataset labels (proliferative_early/late) and
+  10x dataset labels (proliferative, secretory_early-mid) — absent labels are
+  simply never matched, so the same shorthand works with either dataset.
 
 Confounder control
 ------------------
@@ -38,52 +42,40 @@ Donor hold-out
 
 Examples
 --------
-# Proliferative vs secretory (recommended first CAV), Stromal fibroblasts:
+# CAV 1 — Proliferative phase (10x dataset, Stromal fibroblasts):
+python specific_scripts/make_scrnaseq_spans.py \\
+    --metadata data/GSE111976_summary_10x_day_donor_ctype.csv \\
+    --donor-phase data/GSE111976_summary_10x_donor_phase.csv \\
+    --phases proliferative \\
+    --neg-phases secretory \\
+    --restrict-cell-type "Stromal fibroblasts" \\
+    --out-pos spans/prolif_pos.txt \\
+    --out-neg spans/prolif_neg.txt
+
+# CAV 2 — Secretory phase (10x dataset, Stromal fibroblasts):
+python specific_scripts/make_scrnaseq_spans.py \\
+    --metadata data/GSE111976_summary_10x_day_donor_ctype.csv \\
+    --donor-phase data/GSE111976_summary_10x_donor_phase.csv \\
+    --phases secretory \\
+    --neg-phases proliferative \\
+    --restrict-cell-type "Stromal fibroblasts" \\
+    --out-pos spans/secretory_pos.txt \\
+    --out-neg spans/secretory_neg.txt
+
+# Proliferative vs secretory (C1 dataset):
 python specific_scripts/make_scrnaseq_spans.py \\
     --metadata data/GSE111976_summary_C1_day_donor_ctype.csv \\
     --donor-phase data/GSE111976_summary_C1_donor_phase.csv \\
     --phases proliferative \\
     --neg-phases secretory \\
     --restrict-cell-type "Stromal fibroblasts" \\
-    --out-pos spans/prolif_vs_sec_stromal_pos.txt \\
-    --out-neg spans/prolif_vs_sec_stromal_neg.txt
-
-# Same contrast with donor hold-out for validation:
-python specific_scripts/make_scrnaseq_spans.py \\
-    --metadata data/GSE111976_summary_C1_day_donor_ctype.csv \\
-    --donor-phase data/GSE111976_summary_C1_donor_phase.csv \\
-    --phases proliferative \\
-    --neg-phases secretory \\
-    --restrict-cell-type "Stromal fibroblasts" \\
-    --holdout-donor 40 --holdout-donor 56 \\
-    --out-pos spans/train_pos.txt \\
-    --out-neg spans/train_neg.txt
-
-# Held-out evaluation set:
-python specific_scripts/make_scrnaseq_spans.py \\
-    --metadata data/GSE111976_summary_C1_day_donor_ctype.csv \\
-    --donor-phase data/GSE111976_summary_C1_donor_phase.csv \\
-    --phases proliferative \\
-    --neg-phases secretory \\
-    --restrict-cell-type "Stromal fibroblasts" \\
-    --keep-only-donors 40 56 \\
-    --out-pos spans/eval_pos.txt \\
-    --out-neg spans/eval_neg.txt
-
-# Single-phase contrast (e.g. secretory_early vs menstrual):
-python specific_scripts/make_scrnaseq_spans.py \\
-    --metadata data/GSE111976_summary_C1_day_donor_ctype.csv \\
-    --donor-phase data/GSE111976_summary_C1_donor_phase.csv \\
-    --phase secretory_early \\
-    --neg-phase menstrual \\
-    --restrict-cell-type "Stromal fibroblasts" \\
-    --out-pos spans/se_vs_men_pos.txt \\
-    --out-neg spans/se_vs_men_neg.txt
+    --out-pos spans/prolif_pos.txt \\
+    --out-neg spans/prolif_neg.txt
 
 # Cell type CAV (Macrophages vs Stromal fibroblasts), proliferative phase only:
 python specific_scripts/make_scrnaseq_spans.py \\
-    --metadata data/GSE111976_summary_C1_day_donor_ctype.csv \\
-    --donor-phase data/GSE111976_summary_C1_donor_phase.csv \\
+    --metadata data/GSE111976_summary_10x_day_donor_ctype.csv \\
+    --donor-phase data/GSE111976_summary_10x_donor_phase.csv \\
     --cell-type Macrophages \\
     --neg-cell-type "Stromal fibroblasts" \\
     --restrict-phases proliferative \\
@@ -101,26 +93,31 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # Canonical phase order for reference
+# C1  dataset labels: menstrual, proliferative_early, proliferative_late,
+#                     secretory_early, secretory_mid, secretory_late
+# 10x dataset labels: proliferative, secretory_early, secretory_early-mid,
+#                     secretory_mid, secretory_late
 PHASE_ORDER = [
     'menstrual',
+    'proliferative',
     'proliferative_early',
     'proliferative_late',
     'secretory_early',
+    'secretory_early-mid',
     'secretory_mid',
     'secretory_late',
 ]
 
 # Convenience aliases: a short name expands to a list of canonical phase labels.
-# "menstrual" is intentionally left out of both groups — it is a distinct
-# transitional state (tissue shedding) that should usually be excluded when
-# training a proliferative-vs-secretory CAV.
-PHASE_GROUPS: dict[str, list[str]] = {
-    'proliferative': ['proliferative_early', 'proliferative_late'],
-    'secretory':     ['secretory_early', 'secretory_mid', 'secretory_late'],
+# Includes both C1 and 10x naming variants so the same shorthand works with
+# either dataset — labels absent from the dataset are simply never matched.
+PHASE_GROUPS = {
+    'proliferative': ['proliferative', 'proliferative_early', 'proliferative_late'],
+    'secretory':     ['secretory_early', 'secretory_early-mid', 'secretory_mid', 'secretory_late'],
 }
 
 
-def expand_phases(labels: list[str]) -> list[str]:
+def expand_phases(labels):
     """
     Expand convenience group names (e.g. 'proliferative') to their constituent
     canonical phase labels.  Unknown labels are passed through unchanged so
@@ -132,7 +129,7 @@ def expand_phases(labels: list[str]) -> list[str]:
     return expanded
 
 
-def load_metadata(metadata_path: Path, donor_phase_path: Path | None) -> pd.DataFrame:
+def load_metadata(metadata_path, donor_phase_path):
     """
     Load the per-cell metadata CSV (GSE111976_summary_*_day_donor_ctype.csv).
     Optionally join phase_canonical from the per-donor phase CSV.
@@ -168,15 +165,15 @@ def load_metadata(metadata_path: Path, donor_phase_path: Path | None) -> pd.Data
 
 
 def apply_filters(
-    meta: pd.DataFrame,
-    pos_phases: list[str],          # expanded canonical phase labels for positives
-    neg_phases: list[str],          # expanded canonical phase labels for negatives
-    cell_type: str | None,
-    restrict_cell_type: str | None,
-    restrict_phases: list[str],     # expanded; restrict BOTH sets to these phases
-    holdout_donors: list,
-    keep_only_donors: list,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+    meta,
+    pos_phases,
+    neg_phases,
+    cell_type,
+    restrict_cell_type,
+    restrict_phases,
+    holdout_donors,
+    keep_only_donors,
+):
     """
     Split metadata into positive and negative sets.
     Returns (positives_df, negatives_df).
@@ -253,7 +250,7 @@ def summarize(label: str, df: pd.DataFrame) -> None:
     logger.info(f"  {n_donors} donors: {dict(by_donor)}")
 
 
-def write_spans(cell_ids: list[str], out_path: Path) -> None:
+def write_spans(cell_ids, out_path):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, 'w') as f:
         f.write('\n'.join(cell_ids) + '\n')
