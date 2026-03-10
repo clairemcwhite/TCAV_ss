@@ -250,6 +250,28 @@ def summarize(label: str, df: pd.DataFrame) -> None:
     logger.info(f"  {n_donors} donors: {dict(by_donor)}")
 
 
+def subsample_per_cell_type(df, n, seed):
+    """
+    Cap each cell type in df at n cells, sampled randomly.
+    If n is None, uses the smallest cell type count in df.
+    """
+    import random
+    if n is None:
+        counts = df.groupby('cell_type').size()
+        n = int(counts.min())
+        logger.info(f"--balance-per-cell-type: auto n={n} (smallest cell type)")
+    groups = []
+    for ctype, grp in df.groupby('cell_type'):
+        if len(grp) > n:
+            keep = random.sample(list(grp.index), n)
+            groups.append(grp.loc[keep])
+            logger.info(f"  {ctype}: {len(grp)} → {n}")
+        else:
+            groups.append(grp)
+            logger.info(f"  {ctype}: {len(grp)} (kept all)")
+    return pd.concat(groups) if groups else df.iloc[0:0]
+
+
 def write_spans(cell_ids, out_path):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, 'w') as f:
@@ -317,6 +339,10 @@ def main():
     # Balancing
     parser.add_argument('--balance', action='store_true',
                         help='Subsample the larger set so both sets have equal size.')
+    parser.add_argument('--balance-per-cell-type', type=int, nargs='?', const=-1,
+                        metavar='N',
+                        help='Cap each cell type at N cells within each set independently. '
+                             'If N is omitted, uses the smallest cell type count (auto).')
     parser.add_argument('--balance-seed', type=int, default=42,
                         help='Random seed for balancing subsample (default: 42).')
 
@@ -403,6 +429,18 @@ def main():
             f"Imbalanced sets: {len(positives)} positives vs {len(negatives)} negatives "
             f"(ratio {ratio:.1f}x). Consider --balance to subsample the larger set."
         )
+
+    # ------------------------------------------------------------------
+    # Per-cell-type balancing (optional)
+    # ------------------------------------------------------------------
+    if args.balance_per_cell_type is not None:
+        import random
+        random.seed(args.balance_seed)
+        n = None if args.balance_per_cell_type == -1 else args.balance_per_cell_type
+        logger.info("Balancing positives per cell type:")
+        positives = subsample_per_cell_type(positives, n, args.balance_seed)
+        logger.info("Balancing negatives per cell type:")
+        negatives = subsample_per_cell_type(negatives, n, args.balance_seed)
 
     # ------------------------------------------------------------------
     # Balance (optional)
