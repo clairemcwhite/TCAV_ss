@@ -314,6 +314,12 @@ def main():
     parser.add_argument('--keep-only-donors', nargs='+', metavar='DONOR_ID',
                         help='Keep ONLY these donors (use to build a held-out eval set).')
 
+    # Balancing
+    parser.add_argument('--balance', action='store_true',
+                        help='Subsample the larger set so both sets have equal size.')
+    parser.add_argument('--balance-seed', type=int, default=42,
+                        help='Random seed for balancing subsample (default: 42).')
+
     # Output
     parser.add_argument('--out-pos', required=True,
                         help='Output path for positive spans file.')
@@ -395,8 +401,24 @@ def main():
     if ratio > 5 or ratio < 0.2:
         logger.warning(
             f"Imbalanced sets: {len(positives)} positives vs {len(negatives)} negatives "
-            f"(ratio {ratio:.1f}x). Consider subsampling the larger set for CAV training."
+            f"(ratio {ratio:.1f}x). Consider --balance to subsample the larger set."
         )
+
+    # ------------------------------------------------------------------
+    # Balance (optional)
+    # ------------------------------------------------------------------
+    if args.balance:
+        import random
+        random.seed(args.balance_seed)
+        n = min(len(positives), len(negatives))
+        if len(positives) > n:
+            keep = random.sample(list(positives.index), n)
+            positives = positives.loc[keep]
+            logger.info(f"Balanced: subsampled positives to {n}")
+        elif len(negatives) > n:
+            keep = random.sample(list(negatives.index), n)
+            negatives = negatives.loc[keep]
+            logger.info(f"Balanced: subsampled negatives to {n}")
 
     # ------------------------------------------------------------------
     # Log summaries
