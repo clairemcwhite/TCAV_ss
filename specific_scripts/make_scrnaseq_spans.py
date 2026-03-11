@@ -30,7 +30,7 @@ Pooled-phase convenience groups (can be used with --phases / --neg-phases):
 
 Confounder control
 ------------------
-  --restrict-cell-type <type>  only use cells of this type (removes cell-type
+  --restrict-cell-types <type>  only use cells of this type (removes cell-type
                                 confound when training phase CAVs)
   --restrict-phase <phase>     only use cells from this phase (removes phase
                                 confound when training cell-type CAVs)
@@ -48,7 +48,7 @@ python specific_scripts/make_scrnaseq_spans.py \\
     --donor-phase data/GSE111976_summary_10x_donor_phase.csv \\
     --phases proliferative \\
     --neg-phases secretory \\
-    --restrict-cell-type "Stromal fibroblasts" \\
+    --restrict-cell-types "Stromal fibroblasts" \\
     --out-pos spans/prolif_pos.txt \\
     --out-neg spans/prolif_neg.txt
 
@@ -58,7 +58,7 @@ python specific_scripts/make_scrnaseq_spans.py \\
     --donor-phase data/GSE111976_summary_10x_donor_phase.csv \\
     --phases secretory \\
     --neg-phases proliferative \\
-    --restrict-cell-type "Stromal fibroblasts" \\
+    --restrict-cell-types "Stromal fibroblasts" \\
     --out-pos spans/secretory_pos.txt \\
     --out-neg spans/secretory_neg.txt
 
@@ -68,7 +68,7 @@ python specific_scripts/make_scrnaseq_spans.py \\
     --donor-phase data/GSE111976_summary_C1_donor_phase.csv \\
     --phases proliferative \\
     --neg-phases secretory \\
-    --restrict-cell-type "Stromal fibroblasts" \\
+    --restrict-cell-types "Stromal fibroblasts" \\
     --out-pos spans/prolif_pos.txt \\
     --out-neg spans/prolif_neg.txt
 
@@ -169,7 +169,7 @@ def apply_filters(
     pos_phases,
     neg_phases,
     cell_type,
-    restrict_cell_type,
+    restrict_cell_types,
     restrict_phases,
     holdout_donors,
     keep_only_donors,
@@ -192,12 +192,12 @@ def apply_filters(
         logger.info(f"Keeping only donors {keep_only_donors}: {len(df)} cells")
 
     # ---- confounder restrictions -----------------------------------------
-    if restrict_cell_type:
-        df = df[df['cell_type'] == restrict_cell_type]
-        logger.info(f"Restricted to cell type '{restrict_cell_type}': {len(df)} cells")
+    if restrict_cell_types:
+        df = df[df['cell_type'].isin(restrict_cell_types)]
+        logger.info(f"Restricted to cell types {restrict_cell_types}: {len(df)} cells")
         if len(df) == 0:
             raise ValueError(
-                f"No cells remain after restricting to cell type '{restrict_cell_type}'. "
+                f"No cells remain after restricting to cell types {restrict_cell_types}. "
                 f"Available: {sorted(meta['cell_type'].unique())}"
             )
 
@@ -318,9 +318,9 @@ def main():
                         help='Negative cell type label. Defaults to all non-matching types.')
 
     # Confounder control
-    parser.add_argument('--restrict-cell-type',
-                        help='Only use cells of this type (controls cell-type confound '
-                             'when training phase CAVs).')
+    parser.add_argument('--restrict-cell-typess', nargs='+', metavar='CELL_TYPE',
+                        help='Only use cells of these type(s). Pass one or more cell type '
+                             'labels to control the cell-type confound when training phase CAVs.')
     restrict_phase_grp = parser.add_mutually_exclusive_group()
     restrict_phase_grp.add_argument('--restrict-phase',
                                     help='Only use cells from this single phase.')
@@ -396,7 +396,7 @@ def main():
         pos_phases=pos_phases,
         neg_phases=neg_phases,
         cell_type=args.cell_type,
-        restrict_cell_type=args.restrict_cell_type,
+        restrict_cell_types=args.restrict_cell_types,
         restrict_phases=restrict_phases,
         holdout_donors=args.holdout_donors,
         keep_only_donors=args.keep_only_donors,
