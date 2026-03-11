@@ -318,7 +318,7 @@ def main():
                         help='Negative cell type label. Defaults to all non-matching types.')
 
     # Confounder control
-    parser.add_argument('--restrict-cell-typess', nargs='+', metavar='CELL_TYPE',
+    parser.add_argument('--restrict-cell-types', nargs='+', metavar='CELL_TYPE',
                         help='Only use cells of these type(s). Pass one or more cell type '
                              'labels to control the cell-type confound when training phase CAVs.')
     restrict_phase_grp = parser.add_mutually_exclusive_group()
