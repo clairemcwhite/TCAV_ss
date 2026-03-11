@@ -1,9 +1,11 @@
-## GSE111976 -> lean Geneformer-ready .h5ad
+## Convert count matrices -> lean Geneformer-ready .h5ad
 ## Native R route using anndataR
 ##
-## Supports two modes:
-##   --mode 10x  (default) : reads RDS + 10x metadata CSVs
-##   --mode ct             : reads genes x cells CSV + C1 metadata CSVs
+## Supports three modes:
+##   --mode 10x   (default) : reads RDS + 10x metadata CSVs
+##   --mode ct              : reads genes x cells CSV + C1 metadata CSVs
+##   --mode ncbi            : reads NCBI bulk RNA-seq TPM/counts TSV +
+##                            NCBI gene annotation TSV (Entrez -> Ensembl)
 ##
 ## Usage:
 ##   Rscript convert_mat_to_h5af.R --mode 10x \
@@ -17,6 +19,11 @@
 ##       --meta  data/GSE111976_summary_C1_day_donor_ctype.csv \
 ##       --phase data/GSE111976_summary_C1_donor_phase.csv \
 ##       --out   data/GSE111976_C1_geneformer_ready.h5ad
+##
+##   Rscript convert_mat_to_h5af.R --mode ncbi \
+##       --mat   data/GSE226870_norm_counts_TPM_GRCh38.p13_NCBI.tsv.gz \
+##       --annot data/Human.GRCh38.p13.annot.tsv.gz \
+##       --out   data/GSE226870_TPM_geneformer_ready.h5ad
 
 if (!requireNamespace("BiocManager", quietly = TRUE)) {
   install.packages("BiocManager")
@@ -39,10 +46,11 @@ library(optparse)
 ## ---- Parse arguments -------------------------------------------------------
 option_list <- list(
   make_option("--mode",  type="character", default="10x",
-              help="Input mode: '10x' (RDS) or 'ct' (genes x cells CSV) [default: 10x]"),
-  make_option("--mat",   type="character", help="Count matrix file (RDS or CSV)"),
-  make_option("--meta",  type="character", help="Per-cell metadata CSV"),
-  make_option("--phase", type="character", help="Per-donor phase CSV"),
+              help="Input mode: '10x' (RDS), 'ct' (genes x cells CSV), or 'ncbi' (NCBI TSV) [default: 10x]"),
+  make_option("--mat",   type="character", help="Count matrix file (RDS, CSV, or TSV/TSV.gz)"),
+  make_option("--meta",  type="character", help="Per-cell metadata CSV (10x and ct modes only)"),
+  make_option("--phase", type="character", help="Per-donor phase CSV (10x and ct modes only)"),
+  make_option("--annot", type="character", help="NCBI gene annotation TSV or TSV.gz (ncbi mode, optional; uses biomaRt if omitted)"),
   make_option("--out",   type="character", help="Output .h5ad path")
 )
 opt <- parse_args(OptionParser(option_list=option_list))
@@ -55,6 +63,182 @@ if (is.null(opt$out))   opt$out   <- "GSE111976_10x_geneformer_ready.h5ad"
 
 cat("Mode:", opt$mode, "\n")
 cat("Matrix:", opt$mat, "\n")
+
+## ===========================================================================
+## MODE: ncbi
+## NCBI bulk RNA-seq TSV (samples as columns, Entrez GeneIDs as rows)
+## Gene mapping: Entrez -> Ensembl via NCBI annotation file (no biomaRt)
+## obs: sample IDs only (no day/donor/phase metadata)
+## ===========================================================================
+if (opt$mode == "ncbi") {
+
+  ## 1) Read the count/TPM matrix ------------------------------------------------
+  cat("Reading NCBI matrix (this may take a moment)...\n")
+  if (requireNamespace("data.table", quietly = TRUE)) {
+    library(data.table)
+    dt         <- data.table::fread(opt$mat, header = TRUE, data.table = FALSE)
+  } else {
+    dt <- read.table(opt$mat, header = TRUE, sep = "\t",
+                     check.names = FALSE, stringsAsFactors = FALSE)
+  }
+
+  ## First column is GeneID (Entrez integer), remainder are samples
+  entrez_ids  <- as.character(dt[, 1])
+  sample_ids  <- colnames(dt)[-1]
+  mat         <- as.matrix(dt[, -1, drop = FALSE])
+  rownames(mat) <- entrez_ids
+  colnames(mat) <- sample_ids
+
+  cat("  Loaded:", nrow(mat), "genes x", ncol(mat), "samples\n")
+
+  ## 2) Entrez -> Ensembl mapping (annotation file if given, else biomaRt) ------
+  if (!is.null(opt$annot)) {
+    cat("Reading NCBI annotation file:", opt$annot, "\n")
+    if (requireNamespace("data.table", quietly = TRUE)) {
+      annot <- data.table::fread(opt$annot, header = TRUE, data.table = FALSE,
+                                 sep = "\t", quote = "")
+    } else {
+      annot <- read.table(opt$annot, header = TRUE, sep = "\t",
+                          check.names = FALSE, stringsAsFactors = FALSE,
+                          quote = "", comment.char = "")
+    }
+
+    ## Column names may start with '#' in some releases
+    colnames(annot)[1] <- sub("^#*", "", colnames(annot)[1])
+
+    ## Extract Ensembl ID from the dbXrefs column ("...|Ensembl:ENSGXXX|...")
+    has_ensembl      <- grepl("Ensembl:ENSG", annot$dbXrefs)
+    annot$ensembl_id <- NA_character_
+    annot$ensembl_id[has_ensembl] <- sub(
+      ".*Ensembl:(ENSG[0-9]+).*", "\\1", annot$dbXrefs[has_ensembl]
+    )
+
+    annot2 <- annot[!is.na(annot$ensembl_id) & annot$ensembl_id != "", , drop = FALSE]
+    annot2 <- annot2[!duplicated(annot2$GeneID), , drop = FALSE]
+    cat("  Annotation:", nrow(annot2), "Entrez IDs mapped to Ensembl\n")
+
+    entrez_to_ens    <- stats::setNames(annot2$ensembl_id, as.character(annot2$GeneID))
+    entrez_to_symbol <- stats::setNames(annot2$Symbol,     as.character(annot2$GeneID))
+
+  } else {
+    cat("No --annot provided; querying biomaRt for Entrez -> Ensembl mapping...\n")
+    cache_dir <- file.path(tempdir(), "biomart_cache")
+    dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+    Sys.setenv(BIOMART_CACHE = cache_dir)
+
+    mart    <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+    mapping <- getBM(
+      attributes = c("entrezgene_id", "ensembl_gene_id", "hgnc_symbol"),
+      filters    = "entrezgene_id",
+      values     = unique(entrez_ids),
+      mart       = mart,
+      useCache   = FALSE
+    )
+
+    mapping <- mapping[!is.na(mapping$entrezgene_id) &
+                       mapping$ensembl_gene_id != "", , drop = FALSE]
+    mapping <- mapping[!duplicated(mapping$entrezgene_id), , drop = FALSE]
+    cat("  biomaRt:", nrow(mapping), "Entrez IDs mapped to Ensembl\n")
+
+    entrez_to_ens    <- stats::setNames(mapping$ensembl_gene_id,
+                                        as.character(mapping$entrezgene_id))
+    entrez_to_symbol <- stats::setNames(mapping$hgnc_symbol,
+                                        as.character(mapping$entrezgene_id))
+  }
+
+  ## 3) Map matrix rows to Ensembl ----------------------------------------------
+  ens_ids     <- entrez_to_ens[entrez_ids]
+  gene_syms   <- entrez_to_symbol[entrez_ids]
+
+  keep <- !is.na(ens_ids)
+  cat("  Genes with Ensembl mapping:", sum(keep), "of", length(entrez_ids), "\n")
+
+  mat2      <- mat[keep, , drop = FALSE]
+  ens_ids2  <- ens_ids[keep]
+  syms2     <- gene_syms[keep]
+
+  ## Collapse duplicated Ensembl IDs by summing
+  if (anyDuplicated(ens_ids2) > 0) {
+    idx_list <- split(seq_along(ens_ids2), ens_ids2)
+
+    collapsed <- lapply(idx_list, function(idx) {
+      if (length(idx) == 1) {
+        mat2[idx, , drop = FALSE]
+      } else {
+        matrix(colSums(mat2[idx, , drop = FALSE]), nrow = 1)
+      }
+    })
+
+    mat3        <- do.call(rbind, collapsed)
+    rownames(mat3) <- names(idx_list)
+
+    sym_by_ens  <- vapply(
+      idx_list,
+      function(idx) paste(unique(syms2[idx]), collapse = ";"),
+      character(1)
+    )
+  } else {
+    mat3        <- mat2
+    rownames(mat3) <- ens_ids2
+    sym_by_ens  <- stats::setNames(syms2, ens_ids2)
+  }
+
+  cat("  Final matrix:", nrow(mat3), "genes x", ncol(mat3), "samples\n")
+
+  obj2 <- Matrix(mat3, sparse = TRUE)
+
+  ## 4) Build obs (samples only — no day/donor/phase for bulk data) -------------
+  obs <- data.frame(
+    sample_id = colnames(obj2),
+    n_counts  = Matrix::colSums(obj2),
+    row.names = colnames(obj2),
+    stringsAsFactors = FALSE
+  )
+
+  ## 5) Build var ---------------------------------------------------------------
+  var <- data.frame(
+    ensembl_id  = rownames(obj2),
+    gene_symbol = unname(sym_by_ens[rownames(obj2)]),
+    row.names   = rownames(obj2),
+    stringsAsFactors = FALSE
+  )
+
+  ## 6) Build SCE and write h5ad ------------------------------------------------
+  sce <- SingleCellExperiment(
+    assays  = list(counts = obj2),
+    colData = S4Vectors::DataFrame(obs),
+    rowData = S4Vectors::DataFrame(var)
+  )
+
+  out_file <- opt$out
+  if (file.exists(out_file)) {
+    message("Removing existing file: ", out_file)
+    file.remove(out_file)
+  }
+
+  write_h5ad(
+    sce,
+    out_file,
+    x_mapping    = "counts",
+    layers_mapping = FALSE,
+    obs_mapping  = TRUE,
+    var_mapping  = TRUE,
+    obsm_mapping = FALSE,
+    varm_mapping = FALSE,
+    obsp_mapping = FALSE,
+    varp_mapping = FALSE,
+    uns_mapping  = FALSE
+  )
+
+  cat("Wrote", out_file, "\n")
+  cat("Samples:", ncol(sce), "\n")
+  cat("Genes:  ", nrow(sce), "\n")
+  quit(status = 0)
+}
+
+## ===========================================================================
+## MODES: 10x and ct  (original behaviour, unchanged)
+## ===========================================================================
 
 ## 1) Read inputs -------------------------------------------------------------
 if (opt$mode == "10x") {
@@ -78,7 +262,7 @@ if (opt$mode == "10x") {
   cat("  Loaded:", nrow(obj), "genes x", ncol(obj), "cells\n")
 
 } else {
-  stop("Unknown --mode '", opt$mode, "'. Use '10x' or 'ct'.")
+  stop("Unknown --mode '", opt$mode, "'. Use '10x', 'ct', or 'ncbi'.")
 }
 
 meta_cell <- read.csv(opt$meta,  stringsAsFactors = FALSE, check.names = FALSE)
