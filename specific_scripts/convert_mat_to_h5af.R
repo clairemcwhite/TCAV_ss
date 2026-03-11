@@ -1,15 +1,28 @@
-## GSE111976 10x -> lean Geneformer-ready .h5ad
+## GSE111976 -> lean Geneformer-ready .h5ad
 ## Native R route using anndataR
-## Expected files:
-##   GSE111976_ct_endo_10x.rds
-##   GSE111976_summary_10x_day_donor_ctype.csv
-##   GSE111976_summary_10x_donor_phase.csv
+##
+## Supports two modes:
+##   --mode 10x  (default) : reads RDS + 10x metadata CSVs
+##   --mode ct             : reads genes x cells CSV + C1 metadata CSVs
+##
+## Usage:
+##   Rscript convert_mat_to_h5af.R --mode 10x \
+##       --mat   data/GSE111976_ct_endo_10x.rds \
+##       --meta  data/GSE111976_summary_10x_day_donor_ctype.csv \
+##       --phase data/GSE111976_summary_10x_donor_phase.csv \
+##       --out   data/GSE111976_10x_geneformer_ready.h5ad
+##
+##   Rscript convert_mat_to_h5af.R --mode ct \
+##       --mat   data/GSE111976_ct.csv \
+##       --meta  data/GSE111976_summary_C1_day_donor_ctype.csv \
+##       --phase data/GSE111976_summary_C1_donor_phase.csv \
+##       --out   data/GSE111976_C1_geneformer_ready.h5ad
 
 if (!requireNamespace("BiocManager", quietly = TRUE)) {
   install.packages("BiocManager")
 }
 
-pkgs <- c("Matrix", "biomaRt", "SingleCellExperiment", "S4Vectors", "anndataR", "rhdf5")
+pkgs <- c("Matrix", "biomaRt", "SingleCellExperiment", "S4Vectors", "anndataR", "rhdf5", "optparse")
 for (p in pkgs) {
   if (!requireNamespace(p, quietly = TRUE)) {
     BiocManager::install(p, ask = FALSE, update = FALSE)
@@ -21,32 +34,72 @@ library(biomaRt)
 library(SingleCellExperiment)
 library(S4Vectors)
 library(anndataR)
+library(optparse)
 
-## 1) Read inputs
-obj <- readRDS("GSE111976_ct_endo_10x.rds")
-
-meta_cell <- read.csv(
-  "GSE111976_summary_10x_day_donor_ctype.csv",
-  stringsAsFactors = FALSE,
-  check.names = FALSE
+## ---- Parse arguments -------------------------------------------------------
+option_list <- list(
+  make_option("--mode",  type="character", default="10x",
+              help="Input mode: '10x' (RDS) or 'ct' (genes x cells CSV) [default: 10x]"),
+  make_option("--mat",   type="character", help="Count matrix file (RDS or CSV)"),
+  make_option("--meta",  type="character", help="Per-cell metadata CSV"),
+  make_option("--phase", type="character", help="Per-donor phase CSV"),
+  make_option("--out",   type="character", help="Output .h5ad path")
 )
+opt <- parse_args(OptionParser(option_list=option_list))
 
-meta_phase <- read.csv(
-  "GSE111976_summary_10x_donor_phase.csv",
-  stringsAsFactors = FALSE,
-  check.names = FALSE
-)
+## Defaults for backward compatibility (no args = original 10x behaviour)
+if (is.null(opt$mat))   opt$mat   <- "GSE111976_ct_endo_10x.rds"
+if (is.null(opt$meta))  opt$meta  <- "GSE111976_summary_10x_day_donor_ctype.csv"
+if (is.null(opt$phase)) opt$phase <- "GSE111976_summary_10x_donor_phase.csv"
+if (is.null(opt$out))   opt$out   <- "GSE111976_10x_geneformer_ready.h5ad"
 
-stopifnot(inherits(obj, "dgCMatrix"))
+cat("Mode:", opt$mode, "\n")
+cat("Matrix:", opt$mat, "\n")
 
-## 2) Clean and align metadata
+## 1) Read inputs -------------------------------------------------------------
+if (opt$mode == "10x") {
+  obj <- readRDS(opt$mat)
+  stopifnot(inherits(obj, "dgCMatrix"))
+
+} else if (opt$mode == "ct") {
+  ## genes x cells CSV: first column = gene names, remaining = cell counts
+  cat("Reading CT CSV (this may take a moment)...\n")
+  if (requireNamespace("data.table", quietly = TRUE)) {
+    library(data.table)
+    dt         <- data.table::fread(opt$mat, header = TRUE, data.table = FALSE)
+    gene_names <- dt[, 1]
+    dt         <- dt[, -1, drop = FALSE]
+    rownames(dt) <- gene_names
+    obj <- as(as.matrix(dt), "dgCMatrix")
+  } else {
+    df  <- read.csv(opt$mat, row.names = 1, check.names = FALSE)
+    obj <- as(as.matrix(df), "dgCMatrix")
+  }
+  cat("  Loaded:", nrow(obj), "genes x", ncol(obj), "cells\n")
+
+} else {
+  stop("Unknown --mode '", opt$mode, "'. Use '10x' or 'ct'.")
+}
+
+meta_cell <- read.csv(opt$meta,  stringsAsFactors = FALSE, check.names = FALSE)
+meta_phase <- read.csv(opt$phase, stringsAsFactors = FALSE, check.names = FALSE)
+
+## 2) Clean and align metadata ------------------------------------------------
 meta_cell$cell_type <- gsub("epit/helia", "epithelia", meta_cell$cell_type)
 
-cell_id_col <- if ("cell_name" %in% colnames(meta_cell)) "cell_name" else "X"
-stopifnot(all(colnames(obj) %in% meta_cell[[cell_id_col]]))
+cell_id_col <- if ("cell_name" %in% colnames(meta_cell)) "cell_name" else colnames(meta_cell)[1]
 
-meta_cell2 <- meta_cell[match(colnames(obj), meta_cell[[cell_id_col]]), , drop = FALSE]
-stopifnot(all(meta_cell2[[cell_id_col]] == colnames(obj)))
+## Intersect: keep only cells present in both matrix and metadata
+shared_cells <- intersect(colnames(obj), meta_cell[[cell_id_col]])
+if (length(shared_cells) == 0) stop("No cell IDs match between matrix and metadata.")
+if (length(shared_cells) < ncol(obj)) {
+  cat("  Keeping", length(shared_cells), "of", ncol(obj),
+      "cells that appear in metadata\n")
+}
+obj <- obj[, shared_cells, drop = FALSE]
+
+meta_cell2 <- meta_cell[match(shared_cells, meta_cell[[cell_id_col]]), , drop = FALSE]
+stopifnot(all(meta_cell2[[cell_id_col]] == shared_cells))
 
 donor_col_phase <- if ("donor" %in% colnames(meta_phase)) "donor" else grep("donor", colnames(meta_phase), ignore.case = TRUE, value = TRUE)[1]
 phase_col <- if ("phase" %in% colnames(meta_phase)) "phase" else grep("phase", colnames(meta_phase), ignore.case = TRUE, value = TRUE)[1]
@@ -136,14 +189,13 @@ sce <- SingleCellExperiment(
   rowData = S4Vectors::DataFrame(var)
 )
 
-out_file = "GSE111976_10x_geneformer_ready.h5ad"
+out_file <- opt$out
 if (file.exists(out_file)) {
   message("Removing existing file: ", out_file)
   file.remove(out_file)
 }
 
 ## 5) Write directly from SCE
-## This avoids keeping a separate full AnnData object around in your script.
 write_h5ad(
   sce,
   out_file,
@@ -158,6 +210,6 @@ write_h5ad(
   uns_mapping = FALSE
 )
 
-cat("Wrote GSE111976_10x_geneformer_ready.h5ad\n")
+cat("Wrote", out_file, "\n")
 cat("Cells:", ncol(sce), "\n")
 cat("Genes:", nrow(sce), "\n")
