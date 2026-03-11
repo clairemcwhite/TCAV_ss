@@ -46,7 +46,7 @@ library(optparse)
 ## ---- Parse arguments -------------------------------------------------------
 option_list <- list(
   make_option("--mode",  type="character", default="10x",
-              help="Input mode: '10x' (RDS), 'ct' (genes x cells CSV), or 'ncbi' (NCBI TSV) [default: 10x]"),
+              help="Input mode: '10x' (RDS), 'ct' (genes x cells CSV), 'ncbi' (NCBI TSV), or 'microarray' (gene x sample CSV, gene symbols as rownames) [default: 10x]"),
   make_option("--mat",   type="character", help="Count matrix file (RDS, CSV, or TSV/TSV.gz)"),
   make_option("--meta",  type="character", help="Per-cell metadata CSV (10x and ct modes only)"),
   make_option("--phase", type="character", help="Per-donor phase CSV (10x and ct modes only)"),
@@ -229,6 +229,119 @@ if (opt$mode == "ncbi") {
     varp_mapping = FALSE,
     uns_mapping  = FALSE
   )
+
+  cat("Wrote", out_file, "\n")
+  cat("Samples:", ncol(sce), "\n")
+  cat("Genes:  ", nrow(sce), "\n")
+  quit(status = 0)
+}
+
+## ===========================================================================
+## MODE: microarray
+## Gene x sample CSV (gene symbols as rownames, samples as columns).
+## No per-sample metadata required. Gene symbols -> Ensembl via biomaRt.
+## Usage:
+##   Rscript convert_mat_to_h5af.R --mode microarray \
+##       --mat  data/GSE36318_for_geneformer.csv \
+##       --out  data/GSE36318_geneformer_ready.h5ad
+## ===========================================================================
+if (opt$mode == "microarray") {
+
+  ## 1) Read gene x sample matrix -----------------------------------------------
+  cat("Reading microarray matrix...\n")
+  if (requireNamespace("data.table", quietly = TRUE)) {
+    library(data.table)
+    dt          <- data.table::fread(opt$mat, header = TRUE, data.table = FALSE)
+    gene_symbols <- dt[, 1]
+    dt           <- dt[, -1, drop = FALSE]
+    rownames(dt) <- gene_symbols
+    obj          <- as(as.matrix(dt), "dgCMatrix")
+  } else {
+    df  <- read.csv(opt$mat, row.names = 1, check.names = FALSE)
+    obj <- as(as.matrix(df), "dgCMatrix")
+  }
+  cat("  Loaded:", nrow(obj), "genes x", ncol(obj), "samples\n")
+
+  ## 2) Map gene symbols -> Ensembl via biomaRt ---------------------------------
+  cache_dir <- file.path(tempdir(), "biomart_cache")
+  dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+  Sys.setenv(BIOMART_CACHE = cache_dir)
+
+  genes   <- rownames(obj)
+  mart    <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+  mapping <- getBM(
+    attributes = c("hgnc_symbol", "ensembl_gene_id"),
+    filters    = "hgnc_symbol",
+    values     = unique(genes),
+    mart       = mart,
+    useCache   = FALSE
+  )
+  mapping <- mapping[mapping$hgnc_symbol != "" & mapping$ensembl_gene_id != "", , drop = FALSE]
+  mapping <- mapping[!duplicated(mapping$hgnc_symbol), , drop = FALSE]
+  cat("  biomaRt:", nrow(mapping), "gene symbols mapped to Ensembl\n")
+
+  keep         <- rownames(obj) %in% mapping$hgnc_symbol
+  obj2         <- obj[keep, , drop = FALSE]
+  orig_symbols <- rownames(obj2)
+  ens_ids      <- mapping$ensembl_gene_id[match(orig_symbols, mapping$hgnc_symbol)]
+
+  valid <- !is.na(ens_ids) & ens_ids != ""
+  obj2         <- obj2[valid, , drop = FALSE]
+  orig_symbols <- orig_symbols[valid]
+  ens_ids      <- ens_ids[valid]
+
+  ## Collapse duplicated Ensembl IDs by summing
+  if (anyDuplicated(ens_ids) > 0) {
+    idx_list <- split(seq_along(ens_ids), ens_ids)
+    collapsed <- lapply(idx_list, function(idx) {
+      if (length(idx) == 1) {
+        obj2[idx, , drop = FALSE]
+      } else {
+        Matrix(matrix(Matrix::colSums(obj2[idx, , drop = FALSE]), nrow = 1), sparse = TRUE)
+      }
+    })
+    obj2 <- do.call(rbind, collapsed)
+    rownames(obj2) <- names(idx_list)
+    symbol_by_ens <- vapply(idx_list,
+      function(idx) paste(unique(orig_symbols[idx]), collapse = ";"), character(1))
+  } else {
+    rownames(obj2)  <- ens_ids
+    symbol_by_ens   <- stats::setNames(orig_symbols, rownames(obj2))
+  }
+  cat("  Final matrix:", nrow(obj2), "genes x", ncol(obj2), "samples\n")
+
+  ## 3) Build obs (sample IDs only — no phase/donor metadata) -------------------
+  obs <- data.frame(
+    sample_id = colnames(obj2),
+    n_counts  = Matrix::colSums(obj2),
+    row.names = colnames(obj2),
+    stringsAsFactors = FALSE
+  )
+
+  ## 4) Build var ---------------------------------------------------------------
+  var <- data.frame(
+    ensembl_id  = rownames(obj2),
+    gene_symbol = unname(symbol_by_ens[rownames(obj2)]),
+    row.names   = rownames(obj2),
+    stringsAsFactors = FALSE
+  )
+
+  ## 5) Write h5ad --------------------------------------------------------------
+  sce <- SingleCellExperiment(
+    assays  = list(counts = obj2),
+    colData = S4Vectors::DataFrame(obs),
+    rowData = S4Vectors::DataFrame(var)
+  )
+
+  out_file <- opt$out
+  if (file.exists(out_file)) { message("Removing existing: ", out_file); file.remove(out_file) }
+
+  write_h5ad(sce, out_file,
+    x_mapping = "counts", layers_mapping = FALSE,
+    obs_mapping = TRUE,   var_mapping = TRUE,
+    obsm_mapping = FALSE, varm_mapping = FALSE,
+    obsp_mapping = FALSE, varp_mapping = FALSE,
+    uns_mapping = FALSE)
 
   cat("Wrote", out_file, "\n")
   cat("Samples:", ncol(sce), "\n")
