@@ -61,9 +61,11 @@ def _load_obs(dataset_id, census_version="stable"):
         logger.info(f"Querying CellxGene Census (version={census_version}) "
                     f"for dataset_id={dataset_id} ...")
         census = cellxgene_census.open_soma(census_version=census_version)
+        value_filter = f"dataset_id == '{dataset_id}'"
+        logger.info(f"  Census query: {value_filter}")
         _OBS = (
             census["census_data"]["homo_sapiens"]
-            .obs.read(value_filter=f"dataset_id == '{dataset_id}'")
+            .obs.read(value_filter=value_filter)
             .concat()
             .to_pandas()
             .set_index("soma_joinid")
@@ -219,9 +221,13 @@ def create_cav_spans(
     rng.shuffle(pos_idx)
 
     # ---- Train / val split (80 / 20) ----
+    # Reserve val cells FIRST, then take up to n_per_group for training
+    # from what remains — avoids the case where n_per_group >= len(ids)
+    # leaving nothing for validation.
     def split_train_val(ids, n_train):
-        n_train = min(n_train, len(ids))
-        n_val   = max(1, n_train // 5)
+        total = len(ids)
+        n_val   = max(1, total // 5)          # 20% of what's available
+        n_train = min(n_train, total - n_val)  # train gets the rest, up to n_train
         return ids[:n_train], ids[n_train: n_train + n_val]
 
     pos_train, pos_val = split_train_val(pos_idx, n_per_group)

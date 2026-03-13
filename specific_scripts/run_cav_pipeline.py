@@ -1,0 +1,403 @@
+#!/usr/bin/env python3
+"""
+Orchestrate the full CAV training pipeline for a CellxGene Census dataset.
+
+Runs five steps in sequence, skipping any that are already complete:
+  1. collect  — gather all unique soma_joinids from spans files
+  2. download — fetch expression data from Census → data/cells.h5ad
+  3. embed    — run Geneformer → embeddings/cells.pkl
+  4. train    — train one CAV per concept using spans + embeddings
+  5. evaluate — score train + val sets, write results/evaluation.tsv
+
+Usage
+-----
+python specific_scripts/run_cav_pipeline.py \
+    --library  cav_library/944dedde-... \
+    --model    /path/to/geneformer_model \
+    --dataset-id 944dedde-...
+
+# Keep only CAVs + results (delete h5ad and pkl when done):
+python specific_scripts/run_cav_pipeline.py \
+    --library  cav_library/944dedde-... \
+    --model    /path/to/geneformer_model \
+    --dataset-id 944dedde-... \
+    --slim
+
+# Re-run from a specific step (e.g. after fixing a bug in training):
+python specific_scripts/run_cav_pipeline.py \
+    --library  cav_library/944dedde-... \
+    --model    /path/to/geneformer_model \
+    --dataset-id 944dedde-... \
+    --from-step train
+"""
+
+import argparse
+import json
+import logging
+import subprocess
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from sklearn.metrics import roc_auc_score
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "tcav"))
+from src.train_cav import train_cav
+from src.evaluate import load_cav_artifacts, compute_projections
+from src.utils.data_loader import load_sequence_embeddings
+
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+STEPS = ["collect", "download", "embed", "train", "evaluate"]
+
+CAV_CONFIG = {
+    "use_pca": True,
+    "pca_dim": 128,
+    "regularization_C": 1.0,
+    "cv_folds": 5,
+    "random_seed": 42,
+}
+
+
+# ===========================================================================
+# Helpers
+# ===========================================================================
+
+def read_ids(path):
+    """Read soma_joinid strings from a spans file, skip blank lines."""
+    p = Path(path)
+    if not p.exists():
+        return []
+    return [line.strip() for line in p.read_text().splitlines() if line.strip()]
+
+
+def concept_dirs(spans_dir):
+    """Yield (concept_name, dir_path) for each concept in spans/."""
+    return sorted(
+        (d.name, d) for d in spans_dir.iterdir() if d.is_dir()
+    )
+
+
+# ===========================================================================
+# Step 1: collect
+# ===========================================================================
+
+def step_collect(lib_dir):
+    """Scan all spans files and return a sorted list of unique soma_joinids."""
+    spans_dir = lib_dir / "spans"
+    all_ids = set()
+    n_concepts = 0
+    for concept_name, cdir in concept_dirs(spans_dir):
+        for fname in ["pos.txt", "neg.txt", "val_pos.txt", "val_neg.txt"]:
+            all_ids.update(read_ids(cdir / fname))
+        n_concepts += 1
+    ids = sorted(all_ids)
+    logger.info(f"collect: {len(ids)} unique soma_joinids across {n_concepts} concepts")
+    return ids
+
+
+# ===========================================================================
+# Step 2: download
+# ===========================================================================
+
+def step_download(lib_dir, soma_joinids, dataset_id, census_version="stable"):
+    """Download expression data from Census and save as h5ad."""
+    import cellxgene_census
+
+    h5ad_path = lib_dir / "data" / "cells.h5ad"
+    h5ad_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Census filter: integer soma_joinids
+    id_ints = [int(i) for i in soma_joinids]
+    value_filter = f"soma_joinid in {id_ints}"
+    logger.info(f"download: querying census — {len(id_ints)} cells")
+    logger.info(f"  Census query: {value_filter[:120]}{'...' if len(value_filter) > 120 else ''}")
+
+    census = cellxgene_census.open_soma(census_version=census_version)
+    adata = cellxgene_census.get_anndata(
+        census,
+        organism="Homo sapiens",
+        obs_value_filter=value_filter,
+    )
+    census.close()
+
+    # Set obs_names to soma_joinid strings so they match the spans files
+    adata.obs_names = adata.obs["soma_joinid"].astype(str)
+    logger.info(f"download: {adata.n_obs} cells x {adata.n_vars} genes")
+
+    adata.write_h5ad(h5ad_path)
+    logger.info(f"download: saved {h5ad_path}")
+    return h5ad_path
+
+
+# ===========================================================================
+# Step 3: embed
+# ===========================================================================
+
+def step_embed(lib_dir, h5ad_path, model_path, token_dict_path=None):
+    """Run Geneformer embedding script and return path to pkl."""
+    emb_dir = lib_dir / "embeddings"
+    emb_dir.mkdir(parents=True, exist_ok=True)
+    pkl_path = emb_dir / "cells.pkl"
+
+    embed_script = Path(__file__).parent / "prepare_scrnaseq_embeddings.py"
+    cmd = [
+        sys.executable, str(embed_script),
+        "--input",  str(h5ad_path),
+        "--model",  str(model_path),
+        "--out",    str(pkl_path),
+    ]
+    if token_dict_path:
+        cmd += ["--token-dict", str(token_dict_path)]
+
+    logger.info(f"embed: running {' '.join(cmd)}")
+    subprocess.run(cmd, check=True)
+    logger.info(f"embed: saved {pkl_path}")
+    return pkl_path
+
+
+# ===========================================================================
+# Step 4: train
+# ===========================================================================
+
+def step_train(lib_dir, pkl_path):
+    """For each concept, extract embeddings from pkl and train a CAV."""
+    spans_dir   = lib_dir / "spans"
+    cavs_dir    = lib_dir / "cavs"
+    cavs_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info(f"train: loading embeddings from {pkl_path}")
+    seq_embs, cell_ids = load_sequence_embeddings(str(pkl_path))
+    id_to_idx = {cid: i for i, cid in enumerate(cell_ids)}
+    logger.info(f"train: {len(cell_ids)} cells, hidden_dim={seq_embs.shape[1]}")
+
+    results = []
+    for concept_name, cdir in concept_dirs(spans_dir):
+        cav_out = cavs_dir / concept_name
+        if (cav_out / "concept_v1.npy").exists():
+            logger.info(f"  skip (already trained): {concept_name}")
+            continue
+
+        pos_ids = read_ids(cdir / "pos.txt")
+        neg_ids = read_ids(cdir / "neg.txt")
+
+        # Filter to IDs that made it into the pkl
+        pos_ids = [i for i in pos_ids if i in id_to_idx]
+        neg_ids = [i for i in neg_ids if i in id_to_idx]
+
+        if len(pos_ids) == 0 or len(neg_ids) == 0:
+            logger.warning(f"  skip (no embeddings found): {concept_name}")
+            continue
+
+        # Extract embedding arrays
+        pos_embs = seq_embs[[id_to_idx[i] for i in pos_ids]]
+        neg_embs = seq_embs[[id_to_idx[i] for i in neg_ids]]
+
+        # Save as .npy so train_cav can load them
+        cav_out.mkdir(parents=True, exist_ok=True)
+        np.save(cav_out / "pos.npy", pos_embs)
+        np.save(cav_out / "neg.npy", neg_embs)
+
+        logger.info(f"  training: {concept_name} "
+                    f"({len(pos_ids)} pos, {len(neg_ids)} neg)")
+        try:
+            train_cav(
+                embed_dir=str(cav_out),
+                output_dir=str(cav_out),
+                config=CAV_CONFIG,
+                artifact_version="v1",
+            )
+        except Exception as e:
+            logger.error(f"  FAILED: {concept_name}: {e}")
+            continue
+
+    logger.info("train: done")
+    return id_to_idx, seq_embs, cell_ids
+
+
+# ===========================================================================
+# Step 5: evaluate
+# ===========================================================================
+
+def step_evaluate(lib_dir, id_to_idx, seq_embs):
+    """Score train + val sets for every concept, write evaluation.tsv."""
+    spans_dir  = lib_dir / "spans"
+    cavs_dir   = lib_dir / "cavs"
+    results_dir = lib_dir / "results"
+    results_dir.mkdir(parents=True, exist_ok=True)
+
+    rows = []
+    for concept_name, cdir in concept_dirs(spans_dir):
+        cav_dir = cavs_dir / concept_name
+        if not (cav_dir / "concept_v1.npy").exists():
+            logger.warning(f"  skip (no CAV): {concept_name}")
+            continue
+
+        artifacts = load_cav_artifacts(str(cav_dir), version="v1")
+
+        def score_split(pos_file, neg_file):
+            pos_ids = [i for i in read_ids(pos_file) if i in id_to_idx]
+            neg_ids = [i for i in read_ids(neg_file) if i in id_to_idx]
+            if len(pos_ids) == 0 or len(neg_ids) == 0:
+                return None, None, len(pos_ids), len(neg_ids)
+            embs = seq_embs[[id_to_idx[i] for i in pos_ids + neg_ids]]
+            scores = compute_projections(
+                embs,
+                artifacts["concept_cav"],
+                artifacts["scaler"],
+                artifacts["pca"],
+            )
+            labels = np.array([1] * len(pos_ids) + [0] * len(neg_ids))
+            auroc = roc_auc_score(labels, scores)
+            return auroc, scores.mean(), len(pos_ids), len(neg_ids)
+
+        train_auroc, train_mean, n_pos_tr, n_neg_tr = score_split(
+            cdir / "pos.txt", cdir / "neg.txt"
+        )
+        val_auroc, val_mean, n_pos_val, n_neg_val = score_split(
+            cdir / "val_pos.txt", cdir / "val_neg.txt"
+        )
+
+        logger.info(
+            f"  {concept_name:50s}  "
+            f"train AUROC={train_auroc:.3f}  val AUROC={val_auroc:.3f}"
+        )
+        rows.append({
+            "concept_name":  concept_name,
+            "n_pos_train":   n_pos_tr,
+            "n_neg_train":   n_neg_tr,
+            "n_pos_val":     n_pos_val,
+            "n_neg_val":     n_neg_val,
+            "train_auroc":   round(train_auroc, 4) if train_auroc else None,
+            "val_auroc":     round(val_auroc,   4) if val_auroc   else None,
+        })
+
+    df = pd.DataFrame(rows).sort_values("val_auroc", ascending=False)
+    out_path = results_dir / "evaluation.tsv"
+    df.to_csv(out_path, sep="\t", index=False)
+    logger.info(f"evaluate: saved {out_path}")
+    print(f"\n{'='*70}")
+    print(df.to_string(index=False))
+    return df
+
+
+# ===========================================================================
+# Main
+# ===========================================================================
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Orchestrate full CAV pipeline for a Census dataset.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    parser.add_argument(
+        "--library", required=True,
+        help="Path to cav_library/<dataset_id>/ (output of build_cav_library_agent.py)."
+    )
+    parser.add_argument(
+        "--model", required=True,
+        help="Path to local Geneformer model directory."
+    )
+    parser.add_argument(
+        "--token-dict", default=None,
+        help="Path to Geneformer token dictionary pkl (e.g. token_dictionary_gc104M.pkl)."
+    )
+    parser.add_argument(
+        "--dataset-id", required=True,
+        help="CellxGene Census dataset_id (for the download step)."
+    )
+    parser.add_argument(
+        "--census-version", default="stable",
+        help="CellxGene Census version (default: stable)."
+    )
+    parser.add_argument(
+        "--from-step", choices=STEPS, default="collect",
+        help="Resume from this step, skipping earlier ones (default: collect)."
+    )
+    parser.add_argument(
+        "--slim", action="store_true",
+        help="Delete data/cells.h5ad and embeddings/cells.pkl after training "
+             "to save disk space. CAVs and results are always kept."
+    )
+    args = parser.parse_args()
+
+    lib_dir = Path(args.library)
+    if not lib_dir.exists():
+        raise FileNotFoundError(f"Library directory not found: {lib_dir}")
+
+    start_idx = STEPS.index(args.from_step)
+
+    # ------------------------------------------------------------------ #
+    # Step 1: collect
+    # ------------------------------------------------------------------ #
+    soma_joinids = None
+    if start_idx <= STEPS.index("collect"):
+        soma_joinids = step_collect(lib_dir)
+
+    # ------------------------------------------------------------------ #
+    # Step 2: download
+    # ------------------------------------------------------------------ #
+    h5ad_path = lib_dir / "data" / "cells.h5ad"
+    if start_idx <= STEPS.index("download"):
+        if h5ad_path.exists():
+            logger.info(f"download: skipping (already exists): {h5ad_path}")
+        else:
+            if soma_joinids is None:
+                soma_joinids = step_collect(lib_dir)
+            h5ad_path = step_download(
+                lib_dir, soma_joinids, args.dataset_id,
+                census_version=args.census_version
+            )
+
+    # ------------------------------------------------------------------ #
+    # Step 3: embed
+    # ------------------------------------------------------------------ #
+    pkl_path = lib_dir / "embeddings" / "cells.pkl"
+    if start_idx <= STEPS.index("embed"):
+        if pkl_path.exists():
+            logger.info(f"embed: skipping (already exists): {pkl_path}")
+        else:
+            pkl_path = step_embed(lib_dir, h5ad_path, args.model, args.token_dict)
+
+    # ------------------------------------------------------------------ #
+    # Step 4: train
+    # ------------------------------------------------------------------ #
+    id_to_idx = seq_embs = None
+    if start_idx <= STEPS.index("train"):
+        id_to_idx, seq_embs, _ = step_train(lib_dir, pkl_path)
+
+    # ------------------------------------------------------------------ #
+    # Step 5: evaluate
+    # ------------------------------------------------------------------ #
+    if start_idx <= STEPS.index("evaluate"):
+        if id_to_idx is None:
+            logger.info("evaluate: loading embeddings...")
+            seq_embs, cell_ids = load_sequence_embeddings(str(pkl_path))
+            id_to_idx = {cid: i for i, cid in enumerate(cell_ids)}
+        step_evaluate(lib_dir, id_to_idx, seq_embs)
+
+    # ------------------------------------------------------------------ #
+    # Slim mode: remove large intermediates
+    # ------------------------------------------------------------------ #
+    if args.slim:
+        for path in [h5ad_path, pkl_path]:
+            if path.exists():
+                path.unlink()
+                logger.info(f"slim: deleted {path}")
+        # Also remove .npy files saved alongside CAV artifacts
+        for _, cdir in concept_dirs(lib_dir / "cavs"):
+            for npy in ["pos.npy", "neg.npy"]:
+                p = cdir / npy
+                if p.exists():
+                    p.unlink()
+        logger.info("slim: intermediate files removed")
+
+    logger.info("Pipeline complete.")
+
+
+if __name__ == "__main__":
+    main()
