@@ -130,6 +130,17 @@ def step_download(lib_dir, soma_joinids, dataset_id, census_version="stable"):
     adata.obs_names = adata.obs["soma_joinid"].astype(str)
     adata.obs_names.name = None
     adata.obs = adata.obs.drop(columns=["soma_joinid"])
+
+    # Census uses gene symbols as var_names by default; Geneformer needs
+    # Ensembl IDs. Switch var_names to feature_id.
+    if "feature_id" in adata.var.columns:
+        adata.var_names = adata.var["feature_id"].astype(str)
+        adata.var_names.name = None
+        logger.info(f"download: set var_names to Ensembl IDs (feature_id)")
+    else:
+        logger.warning("download: 'feature_id' not in var columns — "
+                       "var_names may not match token dictionary")
+
     logger.info(f"download: {adata.n_obs} cells x {adata.n_vars} genes")
 
     adata.write_h5ad(h5ad_path)
