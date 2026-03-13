@@ -106,16 +106,19 @@ def main():
                .agg(['mean', 'count'])
                .round(3))
 
-    # Flatten multi-level columns: (cav, stat) -> "cav_mean" / "cav_n"
-    summary.columns = [f"{cav}_{stat}" if stat != 'count'
-                       else f"n_cells"
-                       for cav, stat in summary.columns]
+    # Compute mean scores and cell counts separately, then join
+    means  = (combined
+              .groupby(group_cols, observed=True)[cav_cols]
+              .mean()
+              .round(3))
+    means.columns = [f"{c}_mean" for c in means.columns]
 
-    # Keep only one n_cells column (they're all the same)
-    n_col = [c for c in summary.columns if c == 'n_cells']
-    other = [c for c in summary.columns if c != 'n_cells']
-    summary = summary[other + [n_col[0]]].copy()
-    summary.columns = other + ['n_cells']
+    counts = (combined
+              .groupby(group_cols, observed=True)
+              .size()
+              .rename('n_cells'))
+
+    summary = means.join(counts)
 
     # Filter small groups
     summary = summary[summary['n_cells'] >= args.min_cells]
@@ -133,12 +136,11 @@ def main():
         pivot_col = group_cols[-1]
 
         for cav in cav_cols:
-            col_name = f"{cav}_mean"
-            if col_name not in summary.reset_index().columns:
+            if f"{cav}_mean" not in summary.reset_index().columns:
                 continue
             try:
                 pivot = summary.reset_index().pivot_table(
-                    values=col_name,
+                    values=f"{cav}_mean",
                     index=row_col,
                     columns=pivot_col,
                     aggfunc='mean'
