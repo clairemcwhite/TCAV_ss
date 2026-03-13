@@ -124,8 +124,12 @@ def step_download(lib_dir, soma_joinids, dataset_id, census_version="stable"):
     )
     census.close()
 
-    # Set obs_names to soma_joinid strings so they match the spans files
+    # Set obs_names to soma_joinid strings so they match the spans files,
+    # then drop the now-redundant soma_joinid column to avoid the anndata
+    # "index.name also used by a column with different values" error.
     adata.obs_names = adata.obs["soma_joinid"].astype(str)
+    adata.obs_names.name = None
+    adata.obs = adata.obs.drop(columns=["soma_joinid"])
     logger.info(f"download: {adata.n_obs} cells x {adata.n_vars} genes")
 
     adata.write_h5ad(h5ad_path)
