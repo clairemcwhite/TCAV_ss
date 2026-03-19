@@ -18,6 +18,8 @@ python specific_scripts/build_reference_population.py \\
     --model   /path/to/geneformer_model \\
     --token-dict /path/to/token_dictionary.pkl
 
+# Pass --delete-h5ad to remove reference.h5ad after embedding.
+
 # Then use with run_cav_pipeline.py:
 python specific_scripts/run_cav_pipeline.py \\
     --library    cav_library/<dataset_id>/ \\
@@ -162,8 +164,9 @@ def main():
                         help="Random seed for cell sampling (default: 42)")
     parser.add_argument("--census-version", default="stable",
                         help="CellxGene Census version (default: stable)")
-    parser.add_argument("--keep-h5ad", action="store_true",
-                        help="Keep reference.h5ad after embedding (deleted by default)")
+    parser.add_argument("--delete-h5ad", action="store_true",
+                        help="Delete reference.h5ad after embedding to save disk space "
+                             "(kept by default)")
     args = parser.parse_args()
 
     out_dir = Path(args.out)
@@ -211,9 +214,9 @@ def main():
     logger.info(f"  Embedding dim  : {embs.shape[1]}")
     logger.info(f"  pkl            : {pkl_path}")
 
-    if not args.keep_h5ad and h5ad_path.exists():
+    if args.delete_h5ad and h5ad_path.exists():
         h5ad_path.unlink()
-        logger.info(f"  Deleted h5ad (pass --keep-h5ad to retain)")
+        logger.info(f"  Deleted h5ad")
 
     print(f"\nDone. Pass to run_cav_pipeline.py with:")
     print(f"  --reference-pkl {pkl_path}")

@@ -270,13 +270,16 @@ def load_global_pca(lib_dir):
 # ===========================================================================
 
 def step_train(lib_dir, pkl_path, global_scaler=None, global_pca=None,
-               reference_embs=None, reference_n=1000, seed=42):
+               reference_embs=None, reference_ids=None, reference_n=1000, seed=42):
     """
     For each concept, extract embeddings from pkl and train a CAV.
 
     reference_embs: if provided, N cells are randomly sampled from this array
         as negatives instead of reading neg.txt.  Enables a universal negative
         set so all CAV directions are comparable.
+    reference_ids: parallel list of cell ID strings for reference_embs.
+        When provided, the sampled IDs are written to ref_neg_ids.txt alongside
+        the CAV artifacts for full reproducibility.
     reference_n: how many reference cells to sample as negatives per concept.
     """
     spans_dir = lib_dir / "spans"
@@ -309,6 +312,13 @@ def step_train(lib_dir, pkl_path, global_scaler=None, global_pca=None,
             neg_idx = rng.choice(len(reference_embs), size=n_neg, replace=False)
             neg_embs = reference_embs[neg_idx]
             neg_label = f"{n_neg} reference"
+            # Record exactly which reference cells were used as negatives
+            cav_out.mkdir(parents=True, exist_ok=True)
+            if reference_ids is not None:
+                sampled_ids = [reference_ids[i] for i in neg_idx]
+                (cav_out / "ref_neg_ids.txt").write_text(
+                    "\n".join(map(str, sampled_ids)) + "\n"
+                )
         else:
             neg_ids = [i for i in read_ids(cdir / "neg.txt") if i in id_to_idx]
             if len(neg_ids) == 0:
@@ -562,6 +572,7 @@ def main():
         id_to_idx, seq_embs, _ = step_train(
             lib_dir, pkl_path, global_scaler, global_pca_obj,
             reference_embs=reference_embs,
+            reference_ids=ref_ids if args.reference_pkl else None,
             reference_n=args.reference_n,
         )
 
