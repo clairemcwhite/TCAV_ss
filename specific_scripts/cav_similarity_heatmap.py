@@ -155,6 +155,56 @@ def plot_celltype_similarity(df, out_path, figsize=10):
     return corr
 
 
+def load_cav_directions(library_dir):
+    """Load all CAV vectors and return (matrix, labels)."""
+    cavs_dir = Path(library_dir) / "cavs"
+    vectors, names = [], []
+    for d in sorted(cavs_dir.iterdir()):
+        cav_path = d / "concept_v1.npy"
+        if not cav_path.exists():
+            continue
+        vec = np.load(cav_path)
+        vectors.append(vec / (np.linalg.norm(vec) + 1e-10))
+        names.append(short_label(d.name))
+    return np.vstack(vectors), names
+
+
+def plot_cav_direction_similarity(library_dir, out_path, figsize=10):
+    """Cosine similarity between CAV direction vectors (CAV × CAV)."""
+    vecs, names = load_cav_directions(library_dir)
+    sim = vecs @ vecs.T
+    df  = pd.DataFrame(sim, index=names, columns=names)
+
+    g = sns.clustermap(
+        df,
+        cmap="RdBu_r",
+        center=0,
+        vmin=-1, vmax=1,
+        figsize=(figsize, figsize),
+        xticklabels=True,
+        yticklabels=True,
+        dendrogram_ratio=0.15,
+        linewidths=0.5,
+        annot=len(df) <= 20,
+        fmt=".2f",
+    )
+    g.fig.suptitle("CAV direction cosine similarity\n(directly comparable only with global PCA)",
+                   y=1.01)
+    plt.savefig(out_path, dpi=150, bbox_inches="tight")
+    print(f"Saved {out_path}")
+
+    pairs = []
+    for i in range(len(names)):
+        for j in range(i + 1, len(names)):
+            pairs.append((sim[i, j], names[i], names[j]))
+    print("\nMost aligned CAV directions:")
+    for s, a, b in sorted(pairs, reverse=True)[:10]:
+        print(f"  {s:+.3f}  {a}  ↔  {b}")
+    print("\nMost anti-aligned CAV directions:")
+    for s, a, b in sorted(pairs)[:10]:
+        print(f"  {s:+.3f}  {a}  ↔  {b}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -166,14 +216,17 @@ def main():
                         help="Path to embeddings pkl.")
     parser.add_argument("--out", default="cav_similarity",
                         help="Output prefix (default: cav_similarity). "
-                             "Produces <out>_scores.png and <out>_celltypes.png")
+                             "Produces <out>_celltypes.png and <out>_directions.png")
     parser.add_argument("--figsize", type=int, default=12)
     args = parser.parse_args()
 
+    # Heatmap 1: cell-type similarity via cross-score correlation
     df = build_cross_score_matrix(args.library, args.pkl)
+    plot_celltype_similarity(df, f"{args.out}_celltypes.png", args.figsize - 2)
 
-    plot_cross_score(df,             f"{args.out}_scores.png",    args.figsize)
-    plot_celltype_similarity(df,     f"{args.out}_celltypes.png", args.figsize - 2)
+    # Heatmap 2: CAV direction cosine similarity
+    print("\n" + "="*60)
+    plot_cav_direction_similarity(args.library, f"{args.out}_directions.png", args.figsize - 2)
 
 
 if __name__ == "__main__":
