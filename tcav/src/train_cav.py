@@ -215,7 +215,9 @@ def train_cav(
     output_dir: str,
     config: Dict,
     artifact_version: str = "v1",
-    holdout_fraction: float = 0.0
+    holdout_fraction: float = 0.0,
+    scaler=None,
+    pca=None,
 ) -> None:
     """
     Complete CAV training pipeline.
@@ -226,6 +228,10 @@ def train_cav(
         config: Configuration dictionary
         artifact_version: Version string
         holdout_fraction: Fraction of data to hold out for evaluation (0 = no holdout)
+        scaler: Optional pre-fit StandardScaler. If provided, skips fitting a new one.
+                Use this to share a global scaler across all CAVs in a library so that
+                CAV directions live in the same coordinate system and are directly comparable.
+        pca: Optional pre-fit PCA. If provided alongside scaler, skips fitting a new PCA.
     """
     X, y = load_embeddings(embed_dir)
 
@@ -244,11 +250,18 @@ def train_cav(
         X_train, y_train = X, y
         X_holdout, y_holdout = None, None
 
-    scaler, pca, preprocess_meta = create_scaler_and_pca(
-        X_train,
-        use_pca=config.get('use_pca', True),
-        pca_dim=config.get('pca_dim', 128)
-    )
+    if scaler is None:
+        scaler, pca, preprocess_meta = create_scaler_and_pca(
+            X_train,
+            use_pca=config.get('use_pca', True),
+            pca_dim=config.get('pca_dim', 128)
+        )
+    else:
+        preprocess_meta = {
+            'global_pca': True,
+            'pca_dim': pca.n_components_ if pca is not None else None,
+        }
+        logger.info("Using pre-fit global scaler/PCA")
 
     X_scaled = scaler.transform(X_train)
     if pca is not None:

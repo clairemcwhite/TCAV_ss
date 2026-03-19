@@ -51,7 +51,7 @@ logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-STEPS = ["collect", "download", "embed", "train", "evaluate"]
+STEPS = ["collect", "download", "embed", "global_pca", "train", "evaluate"]
 
 CAV_CONFIG = {
     "use_pca": True,
@@ -180,10 +180,72 @@ def step_embed(lib_dir, h5ad_path, model_path, token_dict_path=None):
 
 
 # ===========================================================================
-# Step 4: train
+# Step 4: global_pca  (optional — fit one shared scaler+PCA across all concepts)
 # ===========================================================================
 
-def step_train(lib_dir, pkl_path):
+def step_global_pca(lib_dir, pkl_path, pca_dim=128, seed=42):
+    """
+    Fit a single StandardScaler + PCA on ALL training embeddings (pos + neg
+    across every concept), deduplicated by cell ID.  Saves artifacts to
+    lib_dir/global_pca_v1.pkl so they can be loaded and passed to train_cav.
+
+    With a shared PCA basis every CAV direction lives in the same coordinate
+    system, making cosine similarities between CAVs directly meaningful.
+    """
+    import joblib
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.decomposition import PCA
+
+    out_path = lib_dir / "global_pca_v1.pkl"
+
+    spans_dir = lib_dir / "spans"
+    logger.info("global_pca: collecting all training cell IDs...")
+    all_ids = set()
+    for _, cdir in concept_dirs(spans_dir):
+        all_ids.update(read_ids(cdir / "pos.txt"))
+        all_ids.update(read_ids(cdir / "neg.txt"))
+    logger.info(f"global_pca: {len(all_ids)} unique cells across all concepts")
+
+    logger.info(f"global_pca: loading embeddings from {pkl_path}")
+    seq_embs, cell_ids = load_sequence_embeddings(str(pkl_path))
+    id_to_idx = {cid: i for i, cid in enumerate(cell_ids)}
+
+    valid_ids = [i for i in all_ids if i in id_to_idx]
+    if len(valid_ids) < len(all_ids):
+        logger.warning(f"global_pca: {len(all_ids) - len(valid_ids)} IDs not found in pkl")
+
+    X = seq_embs[[id_to_idx[i] for i in valid_ids]]
+    logger.info(f"global_pca: fitting on {len(X)} cells x {X.shape[1]} dims")
+
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    actual_dim = min(pca_dim, X.shape[0], X.shape[1])
+    pca = PCA(n_components=actual_dim, random_state=seed)
+    pca.fit(X_scaled)
+    var_explained = pca.explained_variance_ratio_.sum()
+    logger.info(f"global_pca: PCA({actual_dim}) explains {var_explained:.1%} of variance")
+
+    joblib.dump({"scaler": scaler, "pca": pca}, out_path)
+    logger.info(f"global_pca: saved {out_path}")
+    return scaler, pca
+
+
+def load_global_pca(lib_dir):
+    import joblib
+    path = lib_dir / "global_pca_v1.pkl"
+    if not path.exists():
+        return None, None
+    artifacts = joblib.load(path)
+    logger.info(f"global_pca: loaded from {path}")
+    return artifacts["scaler"], artifacts["pca"]
+
+
+# ===========================================================================
+# Step 5: train
+# ===========================================================================
+
+def step_train(lib_dir, pkl_path, global_scaler=None, global_pca=None):
     """For each concept, extract embeddings from pkl and train a CAV."""
     spans_dir   = lib_dir / "spans"
     cavs_dir    = lib_dir / "cavs"
@@ -222,13 +284,16 @@ def step_train(lib_dir, pkl_path):
         np.save(cav_out / "neg.npy", neg_embs)
 
         logger.info(f"  training: {concept_name} "
-                    f"({len(pos_ids)} pos, {len(neg_ids)} neg)")
+                    f"({len(pos_ids)} pos, {len(neg_ids)} neg)"
+                    + (" [global PCA]" if global_scaler is not None else ""))
         try:
             train_cav(
                 embed_dir=str(cav_out),
                 output_dir=str(cav_out),
                 config=CAV_CONFIG,
                 artifact_version="v1",
+                scaler=global_scaler,
+                pca=global_pca,
             )
         except Exception as e:
             logger.error(f"  FAILED: {concept_name}: {e}")
@@ -384,11 +449,28 @@ def main():
             pkl_path = step_embed(lib_dir, h5ad_path, args.model, args.token_dict)
 
     # ------------------------------------------------------------------ #
-    # Step 4: train
+    # Step 4: global_pca
+    # ------------------------------------------------------------------ #
+    global_scaler = global_pca_obj = None
+    if start_idx <= STEPS.index("global_pca"):
+        if (lib_dir / "global_pca_v1.pkl").exists():
+            logger.info("global_pca: skipping (already exists)")
+            global_scaler, global_pca_obj = load_global_pca(lib_dir)
+        else:
+            global_scaler, global_pca_obj = step_global_pca(
+                lib_dir, pkl_path, pca_dim=CAV_CONFIG["pca_dim"]
+            )
+    elif (lib_dir / "global_pca_v1.pkl").exists():
+        global_scaler, global_pca_obj = load_global_pca(lib_dir)
+
+    # ------------------------------------------------------------------ #
+    # Step 5: train
     # ------------------------------------------------------------------ #
     id_to_idx = seq_embs = None
     if start_idx <= STEPS.index("train"):
-        id_to_idx, seq_embs, _ = step_train(lib_dir, pkl_path)
+        id_to_idx, seq_embs, _ = step_train(
+            lib_dir, pkl_path, global_scaler, global_pca_obj
+        )
 
     # ------------------------------------------------------------------ #
     # Step 5: evaluate
