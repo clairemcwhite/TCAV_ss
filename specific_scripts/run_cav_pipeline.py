@@ -3,11 +3,12 @@
 Orchestrate the full CAV training pipeline for a CellxGene Census dataset.
 
 Runs five steps in sequence, skipping any that are already complete:
-  1. collect  — gather all unique soma_joinids from spans files
-  2. download — fetch expression data from Census → data/cells.h5ad
-  3. embed    — run Geneformer → embeddings/cells.pkl
-  4. train    — train one CAV per concept using spans + embeddings
-  5. evaluate — score train + val sets, write results/evaluation.tsv
+  1. collect   — gather all unique soma_joinids from spans files
+  2. download  — fetch expression data from Census → data/cells.h5ad
+  3. embed     — run Geneformer → embeddings/cells.pkl
+  4. global_pca— fit shared scaler+PCA (on reference population if --reference-pkl given)
+  5. train     — train one CAV per concept using spans + embeddings
+  6. evaluate  — score train + val sets, write results/evaluation.tsv
 
 Usage
 -----
@@ -15,6 +16,13 @@ python specific_scripts/run_cav_pipeline.py \
     --library  cav_library/944dedde-... \
     --model    /path/to/geneformer_model \
     --dataset-id 944dedde-...
+
+# Universal reference negatives (recommended for comparable CAV directions):
+python specific_scripts/run_cav_pipeline.py \
+    --library       cav_library/944dedde-... \
+    --model         /path/to/geneformer_model \
+    --dataset-id    944dedde-... \
+    --reference-pkl reference_population/embeddings/cells.pkl
 
 # Keep only CAVs + results (delete h5ad and pkl when done):
 python specific_scripts/run_cav_pipeline.py \
@@ -85,17 +93,26 @@ def concept_dirs(spans_dir):
 # Step 1: collect
 # ===========================================================================
 
-def step_collect(lib_dir):
-    """Scan all spans files and return a sorted list of unique soma_joinids."""
+def step_collect(lib_dir, pos_only=False):
+    """
+    Scan spans files and return a sorted list of unique soma_joinids.
+
+    pos_only=True: only collect positive IDs (pos.txt + val_pos.txt).
+    Use this with --reference-pkl so the download/embed steps skip neg cells
+    that are never needed — negatives come from the reference population instead.
+    """
     spans_dir = lib_dir / "spans"
     all_ids = set()
     n_concepts = 0
+    files = (["pos.txt", "val_pos.txt"] if pos_only
+             else ["pos.txt", "neg.txt", "val_pos.txt", "val_neg.txt"])
     for concept_name, cdir in concept_dirs(spans_dir):
-        for fname in ["pos.txt", "neg.txt", "val_pos.txt", "val_neg.txt"]:
+        for fname in files:
             all_ids.update(read_ids(cdir / fname))
         n_concepts += 1
     ids = sorted(all_ids)
-    logger.info(f"collect: {len(ids)} unique soma_joinids across {n_concepts} concepts")
+    mode = "pos-only (reference negatives)" if pos_only else "all"
+    logger.info(f"collect: {len(ids)} unique soma_joinids across {n_concepts} concepts ({mode})")
     return ids
 
 
@@ -183,14 +200,17 @@ def step_embed(lib_dir, h5ad_path, model_path, token_dict_path=None):
 # Step 4: global_pca  (optional — fit one shared scaler+PCA across all concepts)
 # ===========================================================================
 
-def step_global_pca(lib_dir, pkl_path, pca_dim=128, seed=42):
+def step_global_pca(lib_dir, pkl_path=None, reference_pkl=None, pca_dim=128, seed=42):
     """
-    Fit a single StandardScaler + PCA on ALL training embeddings (pos + neg
-    across every concept), deduplicated by cell ID.  Saves artifacts to
-    lib_dir/global_pca_v1.pkl so they can be loaded and passed to train_cav.
+    Fit a single StandardScaler + PCA and save to lib_dir/global_pca_v1.pkl.
 
-    With a shared PCA basis every CAV direction lives in the same coordinate
-    system, making cosine similarities between CAVs directly meaningful.
+    reference_pkl (recommended): fit on the fixed random reference population.
+        All CAVs then share a coordinate system anchored to a common biological
+        background, making CAV directions directly comparable via cosine similarity.
+
+    pkl_path only (legacy): fit on all training embeddings (pos + neg across every
+        concept), deduplicated by cell ID.  CAV directions are in a shared basis
+        but comparability is still limited by negative-set contamination.
     """
     import joblib
     from sklearn.preprocessing import StandardScaler
@@ -198,24 +218,28 @@ def step_global_pca(lib_dir, pkl_path, pca_dim=128, seed=42):
 
     out_path = lib_dir / "global_pca_v1.pkl"
 
-    spans_dir = lib_dir / "spans"
-    logger.info("global_pca: collecting all training cell IDs...")
-    all_ids = set()
-    for _, cdir in concept_dirs(spans_dir):
-        all_ids.update(read_ids(cdir / "pos.txt"))
-        all_ids.update(read_ids(cdir / "neg.txt"))
-    logger.info(f"global_pca: {len(all_ids)} unique cells across all concepts")
+    if reference_pkl is not None:
+        logger.info(f"global_pca: fitting on REFERENCE population: {reference_pkl}")
+        X, ref_ids = load_sequence_embeddings(str(reference_pkl))
+        logger.info(f"global_pca: {len(ref_ids):,} reference cells, dim={X.shape[1]}")
+    else:
+        spans_dir = lib_dir / "spans"
+        logger.info("global_pca: collecting all training cell IDs...")
+        all_ids = set()
+        for _, cdir in concept_dirs(spans_dir):
+            all_ids.update(read_ids(cdir / "pos.txt"))
+            all_ids.update(read_ids(cdir / "neg.txt"))
+        logger.info(f"global_pca: {len(all_ids)} unique cells across all concepts")
 
-    logger.info(f"global_pca: loading embeddings from {pkl_path}")
-    seq_embs, cell_ids = load_sequence_embeddings(str(pkl_path))
-    id_to_idx = {cid: i for i, cid in enumerate(cell_ids)}
+        logger.info(f"global_pca: loading embeddings from {pkl_path}")
+        seq_embs, cell_ids = load_sequence_embeddings(str(pkl_path))
+        id_to_idx = {cid: i for i, cid in enumerate(cell_ids)}
 
-    valid_ids = [i for i in all_ids if i in id_to_idx]
-    if len(valid_ids) < len(all_ids):
-        logger.warning(f"global_pca: {len(all_ids) - len(valid_ids)} IDs not found in pkl")
-
-    X = seq_embs[[id_to_idx[i] for i in valid_ids]]
-    logger.info(f"global_pca: fitting on {len(X)} cells x {X.shape[1]} dims")
+        valid_ids = [i for i in all_ids if i in id_to_idx]
+        if len(valid_ids) < len(all_ids):
+            logger.warning(f"global_pca: {len(all_ids) - len(valid_ids)} IDs not found in pkl")
+        X = seq_embs[[id_to_idx[i] for i in valid_ids]]
+        logger.info(f"global_pca: fitting on {len(X)} cells x {X.shape[1]} dims")
 
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
@@ -245,10 +269,18 @@ def load_global_pca(lib_dir):
 # Step 5: train
 # ===========================================================================
 
-def step_train(lib_dir, pkl_path, global_scaler=None, global_pca=None):
-    """For each concept, extract embeddings from pkl and train a CAV."""
-    spans_dir   = lib_dir / "spans"
-    cavs_dir    = lib_dir / "cavs"
+def step_train(lib_dir, pkl_path, global_scaler=None, global_pca=None,
+               reference_embs=None, reference_n=1000, seed=42):
+    """
+    For each concept, extract embeddings from pkl and train a CAV.
+
+    reference_embs: if provided, N cells are randomly sampled from this array
+        as negatives instead of reading neg.txt.  Enables a universal negative
+        set so all CAV directions are comparable.
+    reference_n: how many reference cells to sample as negatives per concept.
+    """
+    spans_dir = lib_dir / "spans"
+    cavs_dir  = lib_dir / "cavs"
     cavs_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info(f"train: loading embeddings from {pkl_path}")
@@ -256,36 +288,44 @@ def step_train(lib_dir, pkl_path, global_scaler=None, global_pca=None):
     id_to_idx = {cid: i for i, cid in enumerate(cell_ids)}
     logger.info(f"train: {len(cell_ids)} cells, hidden_dim={seq_embs.shape[1]}")
 
-    results = []
+    rng = np.random.default_rng(seed)
+
     for concept_name, cdir in concept_dirs(spans_dir):
         cav_out = cavs_dir / concept_name
         if (cav_out / "concept_v1.npy").exists():
             logger.info(f"  skip (already trained): {concept_name}")
             continue
 
-        pos_ids = read_ids(cdir / "pos.txt")
-        neg_ids = read_ids(cdir / "neg.txt")
-
-        # Filter to IDs that made it into the pkl
-        pos_ids = [i for i in pos_ids if i in id_to_idx]
-        neg_ids = [i for i in neg_ids if i in id_to_idx]
-
-        if len(pos_ids) == 0 or len(neg_ids) == 0:
-            logger.warning(f"  skip (no embeddings found): {concept_name}")
+        # Positive cells always come from the dataset pkl
+        pos_ids = [i for i in read_ids(cdir / "pos.txt") if i in id_to_idx]
+        if len(pos_ids) == 0:
+            logger.warning(f"  skip (no positive embeddings): {concept_name}")
             continue
-
-        # Extract embedding arrays
         pos_embs = seq_embs[[id_to_idx[i] for i in pos_ids]]
-        neg_embs = seq_embs[[id_to_idx[i] for i in neg_ids]]
 
-        # Save as .npy so train_cav can load them
+        # Negative cells: reference population OR spans neg.txt
+        if reference_embs is not None:
+            n_neg = min(reference_n, len(reference_embs))
+            neg_idx = rng.choice(len(reference_embs), size=n_neg, replace=False)
+            neg_embs = reference_embs[neg_idx]
+            neg_label = f"{n_neg} reference"
+        else:
+            neg_ids = [i for i in read_ids(cdir / "neg.txt") if i in id_to_idx]
+            if len(neg_ids) == 0:
+                logger.warning(f"  skip (no negative embeddings): {concept_name}")
+                continue
+            neg_embs = seq_embs[[id_to_idx[i] for i in neg_ids]]
+            neg_label = f"{len(neg_ids)} dataset"
+
+        # Save as .npy for train_cav
         cav_out.mkdir(parents=True, exist_ok=True)
         np.save(cav_out / "pos.npy", pos_embs)
         np.save(cav_out / "neg.npy", neg_embs)
 
+        pca_label = " [global PCA]" if global_scaler is not None else ""
+        ref_label = " [ref neg]" if reference_embs is not None else ""
         logger.info(f"  training: {concept_name} "
-                    f"({len(pos_ids)} pos, {len(neg_ids)} neg)"
-                    + (" [global PCA]" if global_scaler is not None else ""))
+                    f"({len(pos_ids)} pos, {neg_label} neg){pca_label}{ref_label}")
         try:
             train_cav(
                 embed_dir=str(cav_out),
@@ -307,12 +347,21 @@ def step_train(lib_dir, pkl_path, global_scaler=None, global_pca=None):
 # Step 5: evaluate
 # ===========================================================================
 
-def step_evaluate(lib_dir, id_to_idx, seq_embs):
-    """Score train + val sets for every concept, write evaluation.tsv."""
-    spans_dir  = lib_dir / "spans"
-    cavs_dir   = lib_dir / "cavs"
+def step_evaluate(lib_dir, id_to_idx, seq_embs,
+                  reference_embs=None, reference_n=1000, seed=42):
+    """
+    Score train + val sets for every concept, write evaluation.tsv.
+
+    reference_embs: if provided, reference cells are used as negatives for
+        both train and val scoring (mirrors how the CAVs were trained).
+        val_neg.txt cells are ignored when reference mode is active.
+    """
+    spans_dir   = lib_dir / "spans"
+    cavs_dir    = lib_dir / "cavs"
     results_dir = lib_dir / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
+
+    rng = np.random.default_rng(seed)
 
     rows = []
     for concept_name, cdir in concept_dirs(spans_dir):
@@ -325,19 +374,34 @@ def step_evaluate(lib_dir, id_to_idx, seq_embs):
 
         def score_split(pos_file, neg_file):
             pos_ids = [i for i in read_ids(pos_file) if i in id_to_idx]
-            neg_ids = [i for i in read_ids(neg_file) if i in id_to_idx]
-            if len(pos_ids) == 0 or len(neg_ids) == 0:
-                return None, None, len(pos_ids), len(neg_ids)
-            embs = seq_embs[[id_to_idx[i] for i in pos_ids + neg_ids]]
+
+            if reference_embs is not None:
+                # Reference mode: sample from reference population as negatives
+                n_neg = min(reference_n, len(reference_embs))
+                neg_idx = rng.choice(len(reference_embs), size=n_neg, replace=False)
+                neg_arr = reference_embs[neg_idx]
+                if len(pos_ids) == 0:
+                    return None, None, 0, n_neg
+                pos_arr = seq_embs[[id_to_idx[i] for i in pos_ids]]
+                embs = np.vstack([pos_arr, neg_arr])
+                labels = np.array([1] * len(pos_ids) + [0] * n_neg)
+                n_neg_out = n_neg
+            else:
+                neg_ids = [i for i in read_ids(neg_file) if i in id_to_idx]
+                if len(pos_ids) == 0 or len(neg_ids) == 0:
+                    return None, None, len(pos_ids), len(neg_ids)
+                embs = seq_embs[[id_to_idx[i] for i in pos_ids + neg_ids]]
+                labels = np.array([1] * len(pos_ids) + [0] * len(neg_ids))
+                n_neg_out = len(neg_ids)
+
             scores = compute_projections(
                 embs,
                 artifacts["concept_cav"],
                 artifacts["scaler"],
                 artifacts["pca"],
             )
-            labels = np.array([1] * len(pos_ids) + [0] * len(neg_ids))
             auroc = roc_auc_score(labels, scores)
-            return auroc, scores.mean(), len(pos_ids), len(neg_ids)
+            return auroc, scores[:len(pos_ids)].mean(), len(pos_ids), n_neg_out
 
         train_auroc, train_mean, n_pos_tr, n_neg_tr = score_split(
             cdir / "pos.txt", cdir / "neg.txt"
@@ -404,6 +468,19 @@ def main():
         help="Resume from this step, skipping earlier ones (default: collect)."
     )
     parser.add_argument(
+        "--reference-pkl", default=None,
+        help="Path to a reference population pkl (from build_reference_population.py). "
+             "If given, negatives for training and evaluation are sampled from this "
+             "fixed random background instead of the per-concept neg.txt files. "
+             "All CAV directions then live in the same coordinate system and are "
+             "directly comparable via cosine similarity."
+    )
+    parser.add_argument(
+        "--reference-n", type=int, default=1000,
+        help="Cells to sample from the reference pkl as negatives per concept "
+             "(default: 1000).  Only used when --reference-pkl is set."
+    )
+    parser.add_argument(
         "--slim", action="store_true",
         help="Delete data/cells.h5ad and embeddings/cells.pkl after training "
              "to save disk space. CAVs and results are always kept."
@@ -416,12 +493,23 @@ def main():
 
     start_idx = STEPS.index(args.from_step)
 
+    # Load reference population embeddings once (if provided)
+    reference_embs = None
+    if args.reference_pkl:
+        ref_pkl = Path(args.reference_pkl)
+        if not ref_pkl.exists():
+            raise FileNotFoundError(f"--reference-pkl not found: {ref_pkl}")
+        logger.info(f"Reference mode: loading {ref_pkl}")
+        reference_embs, ref_ids = load_sequence_embeddings(str(ref_pkl))
+        logger.info(f"  {len(ref_ids):,} reference cells, dim={reference_embs.shape[1]}")
+
     # ------------------------------------------------------------------ #
     # Step 1: collect
     # ------------------------------------------------------------------ #
     soma_joinids = None
     if start_idx <= STEPS.index("collect"):
-        soma_joinids = step_collect(lib_dir)
+        # In reference mode only download positive cells — negatives come from reference
+        soma_joinids = step_collect(lib_dir, pos_only=(reference_embs is not None))
 
     # ------------------------------------------------------------------ #
     # Step 2: download
@@ -432,7 +520,7 @@ def main():
             logger.info(f"download: skipping (already exists): {h5ad_path}")
         else:
             if soma_joinids is None:
-                soma_joinids = step_collect(lib_dir)
+                soma_joinids = step_collect(lib_dir, pos_only=(reference_embs is not None))
             h5ad_path = step_download(
                 lib_dir, soma_joinids, args.dataset_id,
                 census_version=args.census_version
@@ -458,7 +546,10 @@ def main():
             global_scaler, global_pca_obj = load_global_pca(lib_dir)
         else:
             global_scaler, global_pca_obj = step_global_pca(
-                lib_dir, pkl_path, pca_dim=CAV_CONFIG["pca_dim"]
+                lib_dir,
+                pkl_path=pkl_path,
+                reference_pkl=args.reference_pkl,
+                pca_dim=CAV_CONFIG["pca_dim"],
             )
     elif (lib_dir / "global_pca_v1.pkl").exists():
         global_scaler, global_pca_obj = load_global_pca(lib_dir)
@@ -469,18 +560,24 @@ def main():
     id_to_idx = seq_embs = None
     if start_idx <= STEPS.index("train"):
         id_to_idx, seq_embs, _ = step_train(
-            lib_dir, pkl_path, global_scaler, global_pca_obj
+            lib_dir, pkl_path, global_scaler, global_pca_obj,
+            reference_embs=reference_embs,
+            reference_n=args.reference_n,
         )
 
     # ------------------------------------------------------------------ #
-    # Step 5: evaluate
+    # Step 6: evaluate
     # ------------------------------------------------------------------ #
     if start_idx <= STEPS.index("evaluate"):
         if id_to_idx is None:
             logger.info("evaluate: loading embeddings...")
             seq_embs, cell_ids = load_sequence_embeddings(str(pkl_path))
             id_to_idx = {cid: i for i, cid in enumerate(cell_ids)}
-        step_evaluate(lib_dir, id_to_idx, seq_embs)
+        step_evaluate(
+            lib_dir, id_to_idx, seq_embs,
+            reference_embs=reference_embs,
+            reference_n=args.reference_n,
+        )
 
     # ------------------------------------------------------------------ #
     # Slim mode: remove large intermediates
