@@ -67,6 +67,7 @@ CAV_CONFIG = {
     "regularization_C": 1.0,
     "cv_folds": 5,
     "random_seed": 42,
+    "class_weight": "balanced",   # up-weights positives to match neg count
 }
 
 

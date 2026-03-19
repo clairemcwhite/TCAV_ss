@@ -53,7 +53,8 @@ def train_concept_cav(
     y_train: np.ndarray,
     C: float = 1.0,
     cv_folds: int = 5,
-    random_seed: int = 42
+    random_seed: int = 42,
+    class_weight: str = "balanced",
 ) -> Tuple[LogisticRegression, Dict]:
     """
     Train concept CAV using logistic regression.
@@ -64,6 +65,12 @@ def train_concept_cav(
         C: Regularization strength
         cv_folds: Number of CV folds
         random_seed: Random seed
+        class_weight: Passed to LogisticRegression.  "balanced" (default)
+            re-weights each sample by n_total / (2 * n_class) so that
+            gradient contributions are equal from positives and negatives
+            regardless of how many reference cells were used.  This is
+            especially important with a large fixed reference population
+            (e.g. 10k cells) vs. a small positive set (e.g. 200 cells).
 
     Returns:
         Tuple of (fitted_model, metrics_dict)
@@ -72,7 +79,8 @@ def train_concept_cav(
         C=C,
         max_iter=1000,
         random_state=random_seed,
-        solver='lbfgs'
+        solver='lbfgs',
+        class_weight=class_weight,
     )
 
     cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=random_seed)
@@ -272,7 +280,8 @@ def train_cav(
         y_train,
         C=config.get('regularization_C', 1.0),
         cv_folds=config.get('cv_folds', 5),
-        random_seed=config.get('random_seed', 42)
+        random_seed=config.get('random_seed', 42),
+        class_weight=config.get('class_weight', 'balanced'),
     )
 
     if X_holdout is not None:
