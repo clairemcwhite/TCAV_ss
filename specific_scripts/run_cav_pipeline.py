@@ -131,15 +131,20 @@ def step_download(lib_dir, soma_joinids, dataset_id, census_version="stable"):
     adata.obs_names.name = None
     adata.obs = adata.obs.drop(columns=["soma_joinid"])
 
-    # Census uses gene symbols as var_names by default; Geneformer needs
-    # Ensembl IDs. Switch var_names to feature_id.
+    # Census returns sequential integer var_names; Geneformer needs Ensembl IDs.
+    # feature_id holds the Ensembl ID — set it as var_names and drop the column
+    # to avoid anndata's "index.name also used by a column" write error.
+    logger.info(f"download: var.columns = {adata.var.columns.tolist()}")
+    logger.info(f"download: var_names sample = {adata.var_names[:3].tolist()}")
     if "feature_id" in adata.var.columns:
         adata.var_names = adata.var["feature_id"].astype(str)
         adata.var_names.name = None
-        logger.info(f"download: set var_names to Ensembl IDs (feature_id)")
+        adata.var = adata.var.drop(columns=["feature_id"])
+        logger.info(f"download: var_names set to Ensembl IDs, sample = {adata.var_names[:3].tolist()}")
     else:
-        logger.warning("download: 'feature_id' not in var columns — "
-                       "var_names may not match token dictionary")
+        logger.warning(f"download: 'feature_id' not in var columns — "
+                       f"var_names may not match token dictionary. "
+                       f"var.columns = {adata.var.columns.tolist()}")
 
     logger.info(f"download: {adata.n_obs} cells x {adata.n_vars} genes")
 
