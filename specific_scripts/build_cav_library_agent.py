@@ -345,11 +345,12 @@ Workflow:
 4. Call record_cav_plan once at the end with an entry for every concept
    you created AND every concept you skipped (with a reason).
 
-IMPORTANT: You must NOT stop or return until you have:
-  (a) inspected all relevant columns,
-  (b) attempted create_cav_spans for every qualifying combination, AND
-  (c) called record_cav_plan.
-Do not return early. Do not say you are done before calling record_cav_plan.
+CRITICAL EXECUTION RULE:
+- Do NOT produce any text response until you have called record_cav_plan.
+- After inspecting columns, immediately proceed to call create_cav_spans for
+  each qualifying combination — one tool call per combination.
+- Any text output before record_cav_plan terminates the session prematurely.
+- Your ONLY permitted text response is the final summary AFTER record_cav_plan.
 
 Rules:
 - Use the ACTUAL column names and values found in the data. If the user's
@@ -445,6 +446,32 @@ def main():
     print("=" * 60 + "\n")
 
     response = chat.chat(args.prompt)
+
+    # If the model returned text without creating any spans, it stopped early.
+    # Re-prompt it to continue.
+    spans_dir = _OUT_DIR / "spans"
+    plan_path = _OUT_DIR / "cav_plan.json"
+    max_retries = 3
+    retry = 0
+    while retry < max_retries:
+        spans_exist = spans_dir.exists() and any(spans_dir.iterdir())
+        plan_exists = plan_path.exists()
+        if spans_exist and plan_exists:
+            break
+        retry += 1
+        logger.warning(
+            f"Agent stopped without creating spans or plan (attempt {retry}/{max_retries}). "
+            "Re-prompting to continue..."
+        )
+        if not spans_exist:
+            nudge = ("You have not called create_cav_spans yet. "
+                     "Proceed immediately to call create_cav_spans for each "
+                     "qualifying combination based on the column information you "
+                     "already retrieved. Do not produce text — call the tools.")
+        else:
+            nudge = ("You have created some spans but have not called record_cav_plan. "
+                     "Call record_cav_plan now with all concepts you created or skipped.")
+        response = chat.chat(nudge)
 
     print("\n" + "=" * 60)
     print("Agent complete.")
