@@ -338,29 +338,40 @@ and held-out validation sets (val_pos.txt, val_neg.txt).
 
 Workflow:
 1. Call get_dataset_summary to see all available obs columns.
-2. Call get_column_details on each column relevant to the user's request to
-   get per-category cell counts BEFORE deciding what to create.
+2. Call get_column_details on EVERY column relevant to the user's request
+   to get exact category names and cell counts BEFORE deciding what to create.
+   Do not assume column names or values — always inspect first.
 3. For each qualifying concept, call create_cav_spans.
 4. Call record_cav_plan once at the end with an entry for every concept
    you created AND every concept you skipped (with a reason).
 
+IMPORTANT: You must NOT stop or return until you have:
+  (a) inspected all relevant columns,
+  (b) attempted create_cav_spans for every qualifying combination, AND
+  (c) called record_cav_plan.
+Do not return early. Do not say you are done before calling record_cav_plan.
+
 Rules:
-- Always call get_column_details first — never guess at category names or
-  cell counts; the user's min_cells threshold depends on actual counts.
+- Use the ACTUAL column names and values found in the data. If the user's
+  prompt mentions "macrophage" but the data has "mononuclear phagocyte", use
+  "mononuclear phagocyte". Adapt all names to what the data actually contains.
+- Always call get_column_details before using any column — never guess values.
 - For one-vs-rest: pass ["__all_others__"] as negative_values; the tool
   handles stratified sampling across all remaining categories automatically.
 - For multi-column positive criteria (e.g. cell_type AND tissue AND disease),
-  use the positive_filters parameter: a dict mapping each column name to a
-  list of acceptable values.  ALL conditions are ANDed together.
-  Example: positive_filters={"cell_type": ["macrophage"], "tissue": ["colorectal"], "disease": ["tumor"]}
-  You MUST use get_column_details to confirm the exact column names and
-  value strings before constructing these filters.
-- Concept names: use double underscores to join field values, no spaces
-  (e.g. "macrophage__colorectal__tumor", "T_cell__breast__normal").
+  use the positive_filters parameter: a dict mapping each column name to lists
+  of acceptable values. ALL conditions are ANDed together.
+  Example: positive_filters={"cell_type": ["mononuclear phagocyte"],
+                              "tissue":    ["colorectal"],
+                              "disease":   ["colorectal adenocarcinoma"]}
+  You MUST call get_column_details to confirm exact column names and values.
+- Concept names: use double underscores to join field values, no spaces,
+  replace spaces with underscores
+  (e.g. "mononuclear_phagocyte__colorectal__tumor").
 - If a concept has an error returned by create_cav_spans (e.g. too few cells),
   record it as skipped in the plan — do not retry with the same values.
-- Be systematic: if the user asks for all values in a column, iterate through
-  every value returned by get_column_details, not just the top few."""
+- Be systematic: iterate through EVERY qualifying combination, not just the
+  first few. Do not stop partway through a set of combinations."""
 
 
 # ===========================================================================
