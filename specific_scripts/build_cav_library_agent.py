@@ -128,10 +128,12 @@ def get_column_details(column: str, max_values: int = 200) -> str:
 
 def create_cav_spans(
     concept_name: str,
-    positive_column: str,
-    positive_values: list,
-    negative_column: str,
-    negative_values: list,
+    positive_column: str = None,
+    positive_values: list = None,
+    negative_column: str = None,
+    negative_values: list = None,
+    positive_filters: dict = None,
+    negative_filters: dict = None,
     n_per_group: int = 1000,
     min_cells: int = 200,
     seed: int = 42
@@ -150,44 +152,78 @@ def create_cav_spans(
     negative group has fewer cells than min_cells before sampling.
 
     Args:
-        concept_name:     Short identifier, e.g. "cell_type__T_cell".
-                          Use double underscores to separate field from value.
-        positive_column:  obs column used to select positive cells.
-        positive_values:  List of values that define positive cells,
-                          e.g. ["T cell", "NKT cell"].
-        negative_column:  obs column used to select negative cells.
-        negative_values:  List of values that define negative cells.
-                          Pass ["__all_others__"] to use all cells not in
-                          positive_values as negatives (stratified sampling
-                          across the remaining categories is applied
-                          automatically).
-        n_per_group:      Max cells to sample per group for training
-                          (default 1000).  Actual count may be lower.
-        min_cells:        Minimum cells required in both pos and neg groups
-                          before sampling.  Returns an error and skips file
-                          creation if not met (default 200).
-        seed:             Random seed for reproducibility (default 42).
+        concept_name:      Short identifier, e.g. "cell_type__T_cell" or
+                           "macrophage__colorectal__tumor".
+                           Use double underscores to separate fields/values.
+        positive_filters:  Dict mapping obs column names to lists of acceptable
+                           values.  ALL conditions must be met (AND logic).
+                           Use this for multi-column criteria, e.g.:
+                             {"cell_type": ["macrophage"],
+                              "tissue":    ["colorectal"],
+                              "disease":   ["tumor"]}
+                           Takes precedence over positive_column/positive_values
+                           when provided.
+        positive_column:   obs column for single-column positive selection
+                           (legacy; ignored when positive_filters is given).
+        positive_values:   Values for single-column positive selection
+                           (legacy; ignored when positive_filters is given).
+        negative_filters:  Dict mapping obs column names to lists of acceptable
+                           values for negatives (AND logic).  Takes precedence
+                           over negative_column/negative_values when provided.
+        negative_column:   obs column for single-column negative selection
+                           (legacy; ignored when negative_filters is given).
+        negative_values:   Values for single-column negative selection.
+                           Pass ["__all_others__"] to use all cells not
+                           matching the positive criteria as negatives.
+        n_per_group:       Max cells to sample per group for training
+                           (default 1000).  Actual count may be lower.
+        min_cells:         Minimum cells required in both pos and neg groups
+                           before sampling.  Returns an error and skips file
+                           creation if not met (default 200).
+        seed:              Random seed for reproducibility (default 42).
     """
     obs = _OBS
     rng = np.random.default_rng(seed)
 
     # ---- Positive cells ----
-    pos_mask = obs[positive_column].isin(positive_values)
-    pos_idx  = obs.index[pos_mask].tolist()
+    if positive_filters is not None:
+        pos_mask = pd.Series(True, index=obs.index)
+        for col, vals in positive_filters.items():
+            if col not in obs.columns:
+                return json.dumps({"error": f"Column '{col}' not found in obs."})
+            pos_mask &= obs[col].isin(vals)
+    elif positive_column is not None and positive_values is not None:
+        pos_mask = obs[positive_column].isin(positive_values)
+    else:
+        return json.dumps({"error": "Provide either positive_filters or "
+                                    "both positive_column and positive_values."})
+    pos_idx = obs.index[pos_mask].tolist()
 
     # ---- Negative cells ----
-    if negative_values == ["__all_others__"]:
-        neg_mask = ~obs[positive_column].isin(positive_values)
-    else:
+    all_others = (negative_values == ["__all_others__"])
+    if negative_filters is not None:
+        neg_mask = pd.Series(True, index=obs.index)
+        for col, vals in negative_filters.items():
+            if col not in obs.columns:
+                return json.dumps({"error": f"Column '{col}' not found in obs."})
+            neg_mask &= obs[col].isin(vals)
+        neg_idx = obs.index[neg_mask].tolist()
+    elif all_others:
+        neg_mask = ~pos_mask
+        neg_idx = obs.index[neg_mask].tolist()
+    elif negative_column is not None and negative_values is not None:
         neg_mask = obs[negative_column].isin(negative_values)
-    neg_idx = obs.index[neg_mask].tolist()
+        neg_idx = obs.index[neg_mask].tolist()
+    else:
+        return json.dumps({"error": "Provide either negative_filters, "
+                                    "negative_values=['__all_others__'], or "
+                                    "both negative_column and negative_values."})
 
     # ---- Minimum-cell guard ----
     if len(pos_idx) < min_cells:
         return json.dumps({
             "error": f"Skipping '{concept_name}': only {len(pos_idx)} positive "
-                     f"cells found (min_cells={min_cells}). "
-                     f"Check values in column '{positive_column}'."
+                     f"cells found (min_cells={min_cells})."
         })
     if len(neg_idx) < min_cells:
         return json.dumps({
@@ -195,12 +231,11 @@ def create_cav_spans(
                      f"cells found (min_cells={min_cells})."
         })
 
-    # ---- Stratified negative sampling for __all_others__ ----
-    if negative_values == ["__all_others__"]:
+    # ---- Stratified negative sampling for __all_others__ (single-column only) ----
+    if all_others and positive_column is not None:
         neg_obs   = obs.loc[neg_idx]
         groups    = neg_obs.groupby(positive_column, observed=True)
         n_groups  = len(groups)
-        # draw enough for both train + val (n_per_group * 1.2 rounded up)
         n_total   = min(int(n_per_group * 1.25) + 1, len(neg_idx))
         per_group = max(1, n_total // n_groups)
         stratified = []
@@ -247,19 +282,21 @@ def create_cav_spans(
     write_ids(spans_dir / "val_neg.txt", neg_val)
 
     result = {
-        "concept_name":   concept_name,
-        "n_pos_train":    len(pos_train),
-        "n_neg_train":    len(neg_train),
-        "n_pos_val":      len(pos_val),
-        "n_neg_val":      len(neg_val),
-        "pos_file":       str(spans_dir / "pos.txt"),
-        "neg_file":       str(spans_dir / "neg.txt"),
-        "val_pos_file":   str(spans_dir / "val_pos.txt"),
-        "val_neg_file":   str(spans_dir / "val_neg.txt"),
-        "positive_column": positive_column,
-        "positive_values": positive_values,
-        "negative_column": negative_column,
-        "negative_values": negative_values,
+        "concept_name":     concept_name,
+        "n_pos_train":      len(pos_train),
+        "n_neg_train":      len(neg_train),
+        "n_pos_val":        len(pos_val),
+        "n_neg_val":        len(neg_val),
+        "pos_file":         str(spans_dir / "pos.txt"),
+        "neg_file":         str(spans_dir / "neg.txt"),
+        "val_pos_file":     str(spans_dir / "val_pos.txt"),
+        "val_neg_file":     str(spans_dir / "val_neg.txt"),
+        "positive_filters": positive_filters,
+        "positive_column":  positive_column,
+        "positive_values":  positive_values,
+        "negative_filters": negative_filters,
+        "negative_column":  negative_column,
+        "negative_values":  negative_values,
     }
     logger.info(
         f"  Spans '{concept_name}': "
@@ -312,8 +349,14 @@ Rules:
   cell counts; the user's min_cells threshold depends on actual counts.
 - For one-vs-rest: pass ["__all_others__"] as negative_values; the tool
   handles stratified sampling across all remaining categories automatically.
-- Concept names: fieldname__value using underscores, no spaces
-  (e.g. "cell_type__T_cell", "disease__lung_cancer").
+- For multi-column positive criteria (e.g. cell_type AND tissue AND disease),
+  use the positive_filters parameter: a dict mapping each column name to a
+  list of acceptable values.  ALL conditions are ANDed together.
+  Example: positive_filters={"cell_type": ["macrophage"], "tissue": ["colorectal"], "disease": ["tumor"]}
+  You MUST use get_column_details to confirm the exact column names and
+  value strings before constructing these filters.
+- Concept names: use double underscores to join field values, no spaces
+  (e.g. "macrophage__colorectal__tumor", "T_cell__breast__normal").
 - If a concept has an error returned by create_cav_spans (e.g. too few cells),
   record it as skipped in the plan — do not retry with the same values.
 - Be systematic: if the user asks for all values in a column, iterate through

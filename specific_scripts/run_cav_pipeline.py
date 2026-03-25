@@ -22,7 +22,8 @@ python specific_scripts/run_cav_pipeline.py \
     --library       cav_library/944dedde-... \
     --model         /path/to/geneformer_model \
     --dataset-id    944dedde-... \
-    --reference-pkl reference_population/embeddings/cells.pkl
+    --reference-pkl reference_population/embeddings/cells.pkl \
+    --pca-pkl       reference_population/global_pca_v1.pkl
 
 # Keep only CAVs + results (delete h5ad and pkl when done):
 python specific_scripts/run_cav_pipeline.py \
@@ -201,23 +202,36 @@ def step_embed(lib_dir, h5ad_path, model_path, token_dict_path=None):
 # Step 4: global_pca  (optional — fit one shared scaler+PCA across all concepts)
 # ===========================================================================
 
-def step_global_pca(lib_dir, pkl_path=None, reference_pkl=None, pca_dim=128, seed=42):
+def step_global_pca(lib_dir, pkl_path=None, pca_pkl=None, reference_pkl=None, pca_dim=128, seed=42):
     """
-    Fit a single StandardScaler + PCA and save to lib_dir/global_pca_v1.pkl.
+    Load or fit a single StandardScaler + PCA and save to lib_dir/global_pca_v1.pkl.
 
-    reference_pkl (recommended): fit on the fixed random reference population.
-        All CAVs then share a coordinate system anchored to a common biological
-        background, making CAV directions directly comparable via cosine similarity.
+    pca_pkl (recommended): path to a pre-built scaler+PCA from
+        build_reference_population.py.  Loaded directly — no fitting required.
+        This is the standard mode when using a reference population, since the
+        PCA is already fit on the same reference cells used as negatives.
+
+    reference_pkl (legacy): fit on the fixed random reference population on the fly.
+        Use only if you have a reference embeddings pkl but no pre-built PCA.
 
     pkl_path only (legacy): fit on all training embeddings (pos + neg across every
-        concept), deduplicated by cell ID.  CAV directions are in a shared basis
-        but comparability is still limited by negative-set contamination.
+        concept), deduplicated by cell ID.
     """
     import joblib
     from sklearn.preprocessing import StandardScaler
     from sklearn.decomposition import PCA
 
     out_path = lib_dir / "global_pca_v1.pkl"
+
+    if pca_pkl is not None:
+        logger.info(f"global_pca: loading pre-built PCA from {pca_pkl}")
+        artifacts = joblib.load(pca_pkl)
+        scaler, pca = artifacts["scaler"], artifacts["pca"]
+        logger.info(f"global_pca: PCA({pca.n_components_}), "
+                    f"explains {pca.explained_variance_ratio_.sum():.1%} of variance")
+        joblib.dump({"scaler": scaler, "pca": pca}, out_path)
+        logger.info(f"global_pca: cached to {out_path}")
+        return scaler, pca
 
     if reference_pkl is not None:
         logger.info(f"global_pca: fitting on REFERENCE population: {reference_pkl}")
@@ -479,6 +493,12 @@ def main():
         help="Resume from this step, skipping earlier ones (default: collect)."
     )
     parser.add_argument(
+        "--pca-pkl", default=None,
+        help="Path to a pre-built scaler+PCA pkl (from build_reference_population.py). "
+             "When provided, the global_pca step loads this directly instead of fitting. "
+             "Recommended when using --reference-pkl."
+    )
+    parser.add_argument(
         "--reference-pkl", default=None,
         help="Path to a reference population pkl (from build_reference_population.py). "
              "If given, negatives for training and evaluation are sampled from this "
@@ -559,6 +579,7 @@ def main():
             global_scaler, global_pca_obj = step_global_pca(
                 lib_dir,
                 pkl_path=pkl_path,
+                pca_pkl=args.pca_pkl,
                 reference_pkl=args.reference_pkl,
                 pca_dim=CAV_CONFIG["pca_dim"],
             )
