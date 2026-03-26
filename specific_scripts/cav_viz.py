@@ -1,48 +1,48 @@
 #!/usr/bin/env python3
 """
-cav_disease_viz.py — Visualize normal/cancer CAV directions and cell projections.
+cav_viz.py — Visualize CAV directions and cell projections.
+
+Works with any CAV library structure (cell types, disease, age, treatment, etc.).
+Reads library_structure.json produced by analyze_cav_library.py to interpret
+the naming convention automatically — run that first for best results.
 
 Three main figures:
 
   1. Direction map  (--plot direction-map)
-     All L2 CAV direction vectors projected to 2D (PCA of the direction
-     matrix). Each point is one CAV direction; normal and cancer versions
-     of the same (cell_type, tissue) pair are connected by an arrow
-     showing the disease-transition delta. Reveals the geometry of cancer
-     in concept space: cell types cluster, cancer arrows point consistently
-     away from their normal counterparts.
+     All CAV direction vectors projected to 2D (PCA of the direction matrix).
+     Each point is one concept; baseline and condition versions of the same
+     group are connected by an arrow showing the contrast direction.
+     Works for any contrast: normal/cancer, young/old, treated/untreated, etc.
 
-  2. Disease scatter  (--plot disease-scatter)
-     For each (cell_type, tissue) pair with matched normal + cancer CAVs,
-     a scatter plot of cells projected onto the normal residual (x) vs.
-     cancer residual (y). The delta direction is drawn as an arrow from
-     the mean normal cell toward the mean cancer cell.
+  2. Condition scatter  (--plot condition-scatter)
+     For each group with a matched baseline + condition pair, scatter cells
+     on (baseline_score, condition_score) axes with the delta direction
+     drawn as an arrow.
 
   3. CAV-space UMAP  (--plot cav-umap)
-     Cells embedded in CAV coordinate space (output of cav_hierarchy.py
-     cell_coordinates.tsv) and reduced to 2D with UMAP. Colored by
-     cell type, tissue, or disease state.
+     Cells embedded in CAV coordinate space (from cav_hierarchy.py
+     cell_coordinates.tsv) and reduced to 2D with UMAP.
 
 Usage
 -----
 # Direction map (only needs the library — no cell embeddings required):
-python specific_scripts/cav_disease_viz.py \\
+python specific_scripts/cav_viz.py \\
     --lib-dir  cav_library/3f7c572c/ \\
     --pca-pkl  reference_population/global_pca_v1.pkl \\
     --plot     direction-map \\
     --out      results/figures/direction_map.png
 
-# Disease scatter (needs cell embeddings + obs metadata):
-python specific_scripts/cav_disease_viz.py \\
+# Condition scatter (needs cell embeddings + obs metadata):
+python specific_scripts/cav_viz.py \\
     --lib-dir  cav_library/3f7c572c/ \\
     --pca-pkl  reference_population/global_pca_v1.pkl \\
     --pkl      cav_library/3f7c572c/embeddings/cells.pkl \\
     --obs      cav_library/3f7c572c/data/cells.h5ad \\
-    --plot     disease-scatter \\
-    --out      results/figures/disease_scatter/
+    --plot     condition-scatter \\
+    --out      results/figures/condition_scatter/
 
 # CAV-space UMAP (needs cell_coordinates.tsv from cav_hierarchy.py):
-python specific_scripts/cav_disease_viz.py \\
+python specific_scripts/cav_viz.py \\
     --coords   results/3f7c572c/hierarchy/cell_coordinates.tsv \\
     --obs      cav_library/3f7c572c/data/cells.h5ad \\
     --plot     cav-umap \\
@@ -488,21 +488,21 @@ def main():
         epilog=__doc__,
     )
     parser.add_argument("--plot", required=True,
-                        choices=["direction-map", "disease-scatter", "cav-umap"],
+                        choices=["direction-map", "condition-scatter", "cav-umap"],
                         help="Which figure to produce.")
     parser.add_argument("--lib-dir",
                         help="CAV library directory (cavs/ subdirectory).")
     parser.add_argument("--pca-pkl",
                         help="Global PCA pkl (scaler + PCA).")
     parser.add_argument("--pkl",
-                        help="Cell embedding pkl for disease-scatter.")
+                        help="Cell embedding pkl for condition-scatter.")
     parser.add_argument("--obs",
                         help="h5ad file for cell metadata (obs columns).")
     parser.add_argument("--coords",
                         help="cell_coordinates.tsv from cav_hierarchy.py (for cav-umap).")
     parser.add_argument("--out", required=True,
                         help="Output path (file for direction-map/cav-umap, "
-                             "directory for disease-scatter).")
+                             "directory for condition-scatter).")
     parser.add_argument("--color-col", default="cell_type",
                         help="obs column to color UMAP by (default: cell_type).")
     parser.add_argument("--level", default="L0",
@@ -523,10 +523,10 @@ def main():
             version=args.version,
         )
 
-    elif args.plot == "disease-scatter":
+    elif args.plot == "condition-scatter":
         for req in ["lib_dir", "pkl", "pca_pkl"]:
             if not getattr(args, req):
-                parser.error(f"--{req.replace('_','-')} required for disease-scatter")
+                parser.error(f"--{req.replace('_','-')} required for condition-scatter")
         plot_disease_scatter(
             lib_dir=Path(args.lib_dir),
             pkl_path=args.pkl,
