@@ -431,6 +431,8 @@ def plot_cav_umap(
     obs_path: Optional[str] = None,
     color_col: str = "tissue",
     shape_col: Optional[str] = None,
+    condition_col: Optional[str] = None,
+    baseline_value: str = "normal",
     level_prefix: str = "L0",
     reducer: str = "umap",
     max_cells: int = 20000,
@@ -442,6 +444,8 @@ def plot_cav_umap(
     `reducer` controls the algorithm: 'umap' (default), 'tsne', or 'pca'.
     `color_col` colors points by tissue/cell_type; `shape_col` encodes a
     second variable (e.g. disease_state) via marker shape.
+    `condition_col` switches to binary coloring: baseline_value → gray,
+    everything else → red. Overrides color_col when set.
     """
     # Marker cycle for shape_col
     MARKERS = ["o", "s", "^", "D", "v", "P", "X", "*", "h", "<", ">"]
@@ -484,7 +488,20 @@ def plot_cav_umap(
             obs = load_obs(obs_path, cols)
             aligned = obs.reindex(coords.index.astype(str)).iloc[idx]
 
-            if color_col and color_col in aligned.columns:
+            if condition_col and condition_col in aligned.columns:
+                # Binary mode: baseline → gray, condition → red
+                BASELINE_COLOR  = "#aaaaaa"
+                CONDITION_COLOR = "#d62728"
+                cond_labels = _safe_labels(aligned[condition_col])
+                is_baseline = np.array([
+                    baseline_value.lower() in l.lower() for l in cond_labels
+                ])
+                colors_arr = np.where(is_baseline, BASELINE_COLOR, CONDITION_COLOR)
+                handles_color = [
+                    mpatches.Patch(color=BASELINE_COLOR,  label=f"normal ({baseline_value})"),
+                    mpatches.Patch(color=CONDITION_COLOR, label="cancer / condition"),
+                ]
+            elif color_col and color_col in aligned.columns:
                 labels = _safe_labels(aligned[color_col])
                 unique = sorted(set(labels))
                 palette = cm.get_cmap("tab20", max(len(unique), 1))
@@ -536,8 +553,9 @@ def plot_cav_umap(
     ax.set_xlabel(xl, fontsize=11)
     ax.set_ylabel(yl, fontsize=11)
     title_parts = [f"CAV-space {reducer.upper()} ({level_prefix} axes)"]
-    if color_col:
-        title_parts.append(f"color: {color_col.replace('_', ' ')}")
+    color_label = condition_col if condition_col else color_col
+    if color_label:
+        title_parts.append(f"color: {color_label.replace('_', ' ')}")
     if shape_col:
         title_parts.append(f"shape: {shape_col.replace('_', ' ')}")
     ax.set_title("\n".join([title_parts[0], "  ·  ".join(title_parts[1:])]),
@@ -597,6 +615,12 @@ def main():
                         help="obs column to color embedding by (default: tissue).")
     parser.add_argument("--shape-col", default=None,
                         help="obs column to encode as marker shape (e.g. disease_state).")
+    parser.add_argument("--condition-col", default=None,
+                        help="obs column for binary coloring: baseline=gray, other=red. "
+                             "Overrides --color-col when set.")
+    parser.add_argument("--baseline-value", default="normal",
+                        help="Substring identifying baseline cells in --condition-col "
+                             "(default: 'normal').")
     parser.add_argument("--level", default="L0",
                         choices=["L0", "L1", "L2", "delta"],
                         help="Hierarchy level to use as embedding features (default: L0).")
@@ -642,6 +666,8 @@ def main():
             obs_path=args.obs,
             color_col=args.color_col,
             shape_col=args.shape_col,
+            condition_col=args.condition_col,
+            baseline_value=args.baseline_value,
             level_prefix=args.level,
             reducer=args.reducer,
             max_cells=args.max_cells,
