@@ -403,24 +403,43 @@ def plot_disease_scatter(
 # Figure 3: CAV-space UMAP
 # ---------------------------------------------------------------------------
 
+def _make_reducer(reducer: str, n_components: int = 2):
+    """Return a fitted-reducer-compatible object for the given method name."""
+    if reducer == "umap":
+        try:
+            from umap import UMAP
+        except ImportError:
+            raise ImportError(
+                "umap-learn is not installed. Use --reducer tsne or --reducer pca, "
+                "or install with: pip install umap-learn"
+            )
+        return UMAP(n_components=n_components, random_state=42,
+                    n_neighbors=30, min_dist=0.1)
+    elif reducer == "tsne":
+        from sklearn.manifold import TSNE
+        return TSNE(n_components=n_components, random_state=42,
+                    perplexity=30, n_iter=1000, init="pca", learning_rate="auto")
+    elif reducer == "pca":
+        return PCA(n_components=n_components, random_state=42)
+    else:
+        raise ValueError(f"Unknown reducer '{reducer}'. Choose: umap, tsne, pca")
+
+
 def plot_cav_umap(
     coords_path: str,
     out_path: str,
     obs_path: Optional[str] = None,
     color_col: str = "cell_type",
     level_prefix: str = "L0",
+    reducer: str = "umap",
     max_cells: int = 20000,
     figsize: Tuple[int, int] = (9, 8),
 ):
     """
-    UMAP of cells in CAV coordinate space. `level_prefix` selects which
-    axes to use as features (e.g. 'L0', 'L1', 'L2', or 'delta').
+    2-D embedding of cells in CAV coordinate space. `level_prefix` selects
+    which axes to use as features (e.g. 'L0', 'L1', 'L2', or 'delta').
+    `reducer` controls the algorithm: 'umap' (default), 'tsne', or 'pca'.
     """
-    try:
-        from umap import UMAP
-    except ImportError:
-        raise ImportError("Install umap-learn: pip install umap-learn")
-
     logger.info(f"Loading coordinates: {coords_path}")
     coords = pd.read_csv(coords_path, sep="\t", index_col=0)
 
@@ -428,7 +447,7 @@ def plot_cav_umap(
     feature_cols = [c for c in coords.columns if c.startswith(level_prefix + "__")]
     if not feature_cols:
         raise ValueError(f"No columns with prefix '{level_prefix}__' in {coords_path}")
-    logger.info(f"Using {len(feature_cols)} '{level_prefix}' axes as UMAP features")
+    logger.info(f"Using {len(feature_cols)} '{level_prefix}' axes as features")
 
     # Subsample
     rng = np.random.default_rng(42)
@@ -436,9 +455,8 @@ def plot_cav_umap(
     idx = rng.choice(len(coords), n, replace=False)
     X_feat = coords[feature_cols].iloc[idx].values
 
-    logger.info(f"Running UMAP on {n} cells × {len(feature_cols)} axes...")
-    reducer = UMAP(n_components=2, random_state=42, n_neighbors=30, min_dist=0.1)
-    emb = reducer.fit_transform(X_feat)
+    logger.info(f"Running {reducer.upper()} on {n} cells × {len(feature_cols)} axes...")
+    emb = _make_reducer(reducer).fit_transform(X_feat)
 
     # Color by metadata
     colors = "steelblue"
@@ -457,11 +475,18 @@ def plot_cav_umap(
         except Exception as e:
             logger.warning(f"Could not load color column '{color_col}': {e}")
 
+    axis_labels = {
+        "umap": ("UMAP 1", "UMAP 2"),
+        "tsne": ("t-SNE 1", "t-SNE 2"),
+        "pca":  ("PC 1", "PC 2"),
+    }
+    xl, yl = axis_labels.get(reducer, ("Dim 1", "Dim 2"))
+
     fig, ax = plt.subplots(figsize=figsize)
     ax.scatter(emb[:, 0], emb[:, 1], c=colors, s=4, alpha=0.5, linewidths=0)
-    ax.set_xlabel("UMAP 1", fontsize=11)
-    ax.set_ylabel("UMAP 2", fontsize=11)
-    ax.set_title(f"CAV-space UMAP ({level_prefix} axes)\ncolored by {color_col}",
+    ax.set_xlabel(xl, fontsize=11)
+    ax.set_ylabel(yl, fontsize=11)
+    ax.set_title(f"CAV-space {reducer.upper()} ({level_prefix} axes)\ncolored by {color_col}",
                  fontsize=12)
     ax.set_xticks([]); ax.set_yticks([])
 
@@ -506,7 +531,11 @@ def main():
                         help="obs column to color UMAP by (default: cell_type).")
     parser.add_argument("--level", default="L0",
                         choices=["L0", "L1", "L2", "delta"],
-                        help="Hierarchy level to use as UMAP features (default: L0).")
+                        help="Hierarchy level to use as embedding features (default: L0).")
+    parser.add_argument("--reducer", default="umap",
+                        choices=["umap", "tsne", "pca"],
+                        help="Dimensionality reduction for cav-umap "
+                             "(default: umap; tsne/pca need no extra install).")
     parser.add_argument("--max-cells", type=int, default=20000,
                         help="Subsample cells for scatter/UMAP (default: 20000).")
     parser.add_argument("--version", default="v1")
@@ -545,6 +574,7 @@ def main():
             obs_path=args.obs,
             color_col=args.color_col,
             level_prefix=args.level,
+            reducer=args.reducer,
             max_cells=args.max_cells,
         )
 
