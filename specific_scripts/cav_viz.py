@@ -418,7 +418,7 @@ def _make_reducer(reducer: str, n_components: int = 2):
     elif reducer == "tsne":
         from sklearn.manifold import TSNE
         return TSNE(n_components=n_components, random_state=42,
-                    perplexity=30, n_iter=1000, init="pca", learning_rate="auto")
+                    perplexity=30, max_iter=1000, init="pca", learning_rate="auto")
     elif reducer == "pca":
         return PCA(n_components=n_components, random_state=42)
     else:
