@@ -76,29 +76,44 @@ logger = logging.getLogger(__name__)
 
 
 # ===========================================================================
-# Parsing
+# Parsing — uses library_structure.json when available
 # ===========================================================================
 
-def parse_cav_name(name: str) -> Optional[Tuple[str, str, str]]:
-    """
-    Split 'cell_type__tissue__disease' into (cell_type, tissue, disease).
-    Returns None if the name does not match the expected three-part pattern.
-    """
-    parts = name.split("__")
-    if len(parts) != 3:
+def load_library_structure(lib_dir: Path) -> Optional[dict]:
+    """Load library_structure.json produced by analyze_cav_library.py."""
+    path = lib_dir / "library_structure.json"
+    if not path.exists():
         return None
-    return parts[0], parts[1], parts[2]
+    with open(path) as f:
+        return json.load(f)
 
 
-def discover_cavs(lib_dir: Path, version: str = "v1") -> Dict[str, Tuple[str, str, str]]:
+def discover_cavs(lib_dir: Path, version: str = "v1") -> Dict[str, tuple]:
     """
-    Scan lib_dir/cavs/ and return a dict of
-        {cav_name: (cell_type, tissue, disease)}
-    for every CAV whose concept_{version}.npy exists.
+    Scan lib_dir/cavs/ and return {cav_name: parts_tuple} for every trained CAV.
+
+    Parts tuple meaning depends on library structure (from library_structure.json):
+      2-part library:  (group, concept)
+      3-part library:  (group, context, condition)
+
+    Falls back to splitting on '__' if no library_structure.json exists.
+    Skips CAVs whose name doesn't match the expected number of parts.
     """
     cavs_dir = lib_dir / "cavs"
     if not cavs_dir.exists():
         raise FileNotFoundError(f"No 'cavs/' directory found under {lib_dir}")
+
+    structure = load_library_structure(lib_dir)
+    if structure is not None:
+        sep     = structure.get("separator", "__")
+        n_parts = structure.get("n_levels")
+        logger.info(f"discover_cavs: using library_structure.json "
+                    f"({n_parts}-level, sep='{sep}')")
+    else:
+        sep     = "__"
+        n_parts = None
+        logger.info("discover_cavs: no library_structure.json — "
+                    "accepting any name with 2+ parts")
 
     result = {}
     for d in sorted(cavs_dir.iterdir()):
@@ -107,13 +122,16 @@ def discover_cavs(lib_dir: Path, version: str = "v1") -> Dict[str, Tuple[str, st
         npy = d / f"concept_{version}.npy"
         if not npy.exists():
             continue
-        parsed = parse_cav_name(d.name)
-        if parsed is None:
-            logger.debug(f"Skipping '{d.name}': not a three-part name")
+        parts = d.name.split(sep)
+        if n_parts is not None and len(parts) != n_parts:
+            logger.debug(f"Skipping '{d.name}': expected {n_parts} parts, got {len(parts)}")
             continue
-        result[d.name] = parsed
+        if len(parts) < 2:
+            logger.debug(f"Skipping '{d.name}': fewer than 2 parts")
+            continue
+        result[d.name] = tuple(parts)
 
-    logger.info(f"Found {len(result)} parseable CAVs in {cavs_dir}")
+    logger.info(f"Found {len(result)} CAVs in {cavs_dir}")
     return result
 
 
@@ -170,93 +188,134 @@ def orthogonalize(v: np.ndarray, basis: List[np.ndarray]) -> Optional[np.ndarray
 # ===========================================================================
 
 def build_hierarchy(
-    cav_names: Dict[str, Tuple[str, str, str]],
+    cav_names: Dict[str, tuple],
     cav_dirs: Dict[str, np.ndarray],
+    lib_dir: Optional[Path] = None,
 ) -> Dict:
     """
-    Construct the three-level orthogonal basis from flat CAV directions.
+    Construct the orthogonal basis from flat CAV directions.
+
+    For 3-level libraries (group / context / condition):
+        L0  — group direction (mean of baseline CAVs across contexts)
+        L1  — context residual (within group)
+        L2  — condition residual (within group + context)
+        delta — condition_residual − baseline_residual for matched pairs
+
+    For 2-level libraries (group / condition):
+        L0  — group/baseline direction
+        L2  — condition residual (orthogonalized against L0)
+        (L1 is empty)
 
     Returns a hierarchy dict with keys:
-        'L0'      — {cell_type: unit_vector}  (shared identity)
-        'L1'      — {(cell_type, tissue): unit_vector}  (tissue residual)
+        'L0'      — {group: unit_vector}  (shared identity)
+        'L1'      — {(group, context): unit_vector}  (context residual)
         'L2'      — {(cell_type, tissue, disease): unit_vector}  (disease residual)
         'delta'   — {(cell_type, tissue): unit_vector}  (disease-transition delta,
                      only where both normal and a disease CAV exist at L2)
         'meta'    — structured metadata for reporting
     """
+    # Determine level indices from library_structure.json if available
+    structure      = load_library_structure(lib_dir) if lib_dir else None
+    group_level    = structure["group_level"]    if structure else 0
+    condition_level = structure["condition_level"] if structure else (len(next(iter(cav_names.values()))) - 1)
+    baseline_vals  = set(structure["baseline_values"]) if structure else {"normal"}
+    n_levels       = structure["n_levels"] if structure else len(next(iter(cav_names.values())))
+    sep            = structure["separator"] if structure else "__"
+
+    # Context level sits between group and condition (only meaningful for 3+ levels)
+    has_context = n_levels >= 3
+    context_level = [i for i in range(n_levels)
+                     if i != group_level and i != condition_level][0] if has_context else None
+
+    def parts(name):
+        return cav_names[name]
+
+    def is_baseline(name):
+        return parts(name)[condition_level] in baseline_vals
+
     # ------------------------------------------------------------------ #
-    # Level 0: cell-type directions (mean of normal CAVs across tissues)
+    # Level 0: group directions (mean of baseline CAVs across all contexts)
     # ------------------------------------------------------------------ #
-    normal_by_type: Dict[str, List[np.ndarray]] = {}
-    for name, (ct, tissue, disease) in cav_names.items():
-        if disease == "normal" and name in cav_dirs:
-            normal_by_type.setdefault(ct, []).append(cav_dirs[name])
+    baseline_by_group: Dict[str, List[np.ndarray]] = {}
+    for name in cav_names:
+        if is_baseline(name) and name in cav_dirs:
+            group = parts(name)[group_level]
+            baseline_by_group.setdefault(group, []).append(cav_dirs[name])
 
     L0: Dict[str, np.ndarray] = {}
-    for ct, vecs in normal_by_type.items():
+    for group, vecs in baseline_by_group.items():
         mean_v = np.mean(vecs, axis=0)
-        norm = np.linalg.norm(mean_v)
+        norm   = np.linalg.norm(mean_v)
         if norm > 1e-10:
-            L0[ct] = mean_v / norm
+            L0[group] = mean_v / norm
 
-    logger.info(f"L0 (cell-type axes): {len(L0)} — {sorted(L0)}")
-
-    # ------------------------------------------------------------------ #
-    # Level 1: tissue residuals (within each cell type)
-    # ------------------------------------------------------------------ #
-    # Group normal CAVs by (cell_type, tissue)
-    tissue_normals: Dict[Tuple[str, str], np.ndarray] = {}
-    for name, (ct, tissue, disease) in cav_names.items():
-        if disease == "normal" and name in cav_dirs:
-            tissue_normals[(ct, tissue)] = cav_dirs[name]
-
-    L1: Dict[Tuple[str, str], np.ndarray] = {}
-    for (ct, tissue), v in tissue_normals.items():
-        basis = [L0[ct]] if ct in L0 else []
-        residual = orthogonalize(v, basis)
-        if residual is not None:
-            L1[(ct, tissue)] = residual
-        else:
-            logger.debug(f"L1: {ct}__{tissue} residual is zero — skipping")
-
-    logger.info(f"L1 (tissue axes): {len(L1)}")
+    logger.info(f"L0 (group axes): {len(L0)} — {sorted(L0)}")
 
     # ------------------------------------------------------------------ #
-    # Level 2: disease residuals (within each cell type + tissue)
+    # Level 1: context residuals (within each group) — 3-level libraries only
     # ------------------------------------------------------------------ #
-    L2: Dict[Tuple[str, str, str], np.ndarray] = {}
-    for name, (ct, tissue, disease) in cav_names.items():
+    L1: Dict[tuple, np.ndarray] = {}
+    if has_context:
+        context_baselines: Dict[tuple, np.ndarray] = {}
+        for name in cav_names:
+            if is_baseline(name) and name in cav_dirs:
+                key = (parts(name)[group_level], parts(name)[context_level])
+                context_baselines[key] = cav_dirs[name]
+
+        for (group, context), v in context_baselines.items():
+            basis    = [L0[group]] if group in L0 else []
+            residual = orthogonalize(v, basis)
+            if residual is not None:
+                L1[(group, context)] = residual
+            else:
+                logger.debug(f"L1: {group}__{context} residual is zero — skipping")
+
+    logger.info(f"L1 (context axes): {len(L1)}")
+
+    # ------------------------------------------------------------------ #
+    # Level 2: condition residuals (within group + context)
+    # ------------------------------------------------------------------ #
+    L2: Dict[tuple, np.ndarray] = {}
+    for name in cav_names:
         if name not in cav_dirs:
             continue
+        p     = parts(name)
+        group = p[group_level]
         basis = []
-        if ct in L0:
-            basis.append(L0[ct])
-        if (ct, tissue) in L1:
-            basis.append(L1[(ct, tissue)])
+        if group in L0:
+            basis.append(L0[group])
+        if has_context:
+            context = p[context_level]
+            if (group, context) in L1:
+                basis.append(L1[(group, context)])
+            key = (group, context, p[condition_level])
+        else:
+            key = (group, p[condition_level])
         residual = orthogonalize(cav_dirs[name], basis)
         if residual is not None:
-            L2[(ct, tissue, disease)] = residual
+            L2[key] = residual
         else:
             logger.debug(f"L2: {name} residual is zero — skipping")
 
-    logger.info(f"L2 (disease axes): {len(L2)}")
+    logger.info(f"L2 (condition axes): {len(L2)}")
 
     # ------------------------------------------------------------------ #
-    # Delta: disease-transition directions (cancer_residual − normal_residual)
-    # Only for (ct, tissue) pairs that have both a normal and ≥1 disease entry
+    # Delta: condition_residual − baseline_residual for matched pairs
     # ------------------------------------------------------------------ #
-    delta: Dict[Tuple[str, str, str], np.ndarray] = {}
-    for (ct, tissue, disease), v_disease in L2.items():
-        if disease == "normal":
+    delta: Dict[tuple, np.ndarray] = {}
+    for key, v_cond in L2.items():
+        cond_val = key[-1]
+        if cond_val in baseline_vals:
             continue
-        normal_key = (ct, tissue, "normal")
-        if normal_key in L2:
-            d = v_disease - L2[normal_key]
+        # Build the baseline key by swapping the condition value
+        baseline_key = key[:-1] + (next(iter(baseline_vals)),)
+        if baseline_key in L2:
+            d    = v_cond - L2[baseline_key]
             norm = np.linalg.norm(d)
             if norm > 1e-10:
-                delta[(ct, tissue, disease)] = d / norm
+                delta[key] = d / norm
 
-    logger.info(f"Delta (disease-transition axes): {len(delta)}")
+    logger.info(f"Delta (condition-transition axes): {len(delta)}")
 
     # ------------------------------------------------------------------ #
     # Metadata

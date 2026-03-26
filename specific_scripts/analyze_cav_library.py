@@ -105,7 +105,7 @@ def get_cav_names(lib_dir: Path, version: str = "v1") -> list[str]:
 
 
 def infer_structure(cav_names: list[str], api_key: str,
-                    model: str = "gemini-2.0-flash") -> dict:
+                    model: str = "gemini-2.5-flash") -> dict:
     from chatlas import ChatGoogle
 
     names_block = "\n".join(f"  {n}" for n in cav_names)
@@ -175,8 +175,8 @@ def main():
                         help="CAV library directory (contains cavs/).")
     parser.add_argument("--api-key", required=True,
                         help="Gemini API key.")
-    parser.add_argument("--model", default="gemini-2.0-flash",
-                        help="Gemini model to use (default: gemini-2.0-flash).")
+    parser.add_argument("--model", default="gemini-2.5-flash",
+                        help="Gemini model to use (default: gemini-2.5-flash).")
     parser.add_argument("--version", default="v1",
                         help="CAV artifact version suffix (default: v1).")
     parser.add_argument("--out", default=None,
