@@ -55,6 +55,7 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+import json
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -124,8 +125,6 @@ def load_directions(lib_dir: Path, version: str = "v1") -> Dict[str, np.ndarray]
     for d in sorted(cavs_dir.iterdir()):
         npy = d / f"concept_{version}.npy"
         if not npy.exists():
-            continue
-        if parse_cav_name(d.name) is None:
             continue
         v = np.load(npy).astype(np.float64)
         norm = np.linalg.norm(v)
