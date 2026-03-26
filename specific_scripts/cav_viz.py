@@ -429,7 +429,8 @@ def plot_cav_umap(
     coords_path: str,
     out_path: str,
     obs_path: Optional[str] = None,
-    color_col: str = "cell_type",
+    color_col: str = "tissue",
+    shape_col: Optional[str] = None,
     level_prefix: str = "L0",
     reducer: str = "umap",
     max_cells: int = 20000,
@@ -439,7 +440,12 @@ def plot_cav_umap(
     2-D embedding of cells in CAV coordinate space. `level_prefix` selects
     which axes to use as features (e.g. 'L0', 'L1', 'L2', or 'delta').
     `reducer` controls the algorithm: 'umap' (default), 'tsne', or 'pca'.
+    `color_col` colors points by tissue/cell_type; `shape_col` encodes a
+    second variable (e.g. disease_state) via marker shape.
     """
+    # Marker cycle for shape_col
+    MARKERS = ["o", "s", "^", "D", "v", "P", "X", "*", "h", "<", ">"]
+
     logger.info(f"Loading coordinates: {coords_path}")
     coords = pd.read_csv(coords_path, sep="\t", index_col=0)
 
@@ -458,23 +464,55 @@ def plot_cav_umap(
     logger.info(f"Running {reducer.upper()} on {n} cells × {len(feature_cols)} axes...")
     emb = _make_reducer(reducer).fit_transform(X_feat)
 
-    # Color by metadata
-    colors = "steelblue"
-    handles = None
-    if obs_path and color_col:
-        try:
-            obs = load_obs(obs_path, [color_col])
-            labels = obs[color_col].reindex(coords.index.astype(str)).iloc[idx].fillna("unknown")
-            unique = sorted(labels.unique())
-            palette = cm.get_cmap("tab20", len(unique))
-            lc_map  = {l: palette(i) for i, l in enumerate(unique)}
-            colors  = [lc_map[l] for l in labels]
-            handles = [mpatches.Patch(color=lc_map[l],
-                                       label=l.replace("_", " "))
-                       for l in unique]
-        except Exception as e:
-            logger.warning(f"Could not load color column '{color_col}': {e}")
+    # ------------------------------------------------------------------ #
+    # Load metadata columns (Categorical-safe)
+    # ------------------------------------------------------------------ #
+    def _safe_labels(series) -> np.ndarray:
+        """Convert obs series to string array, handling Categorical safely."""
+        return series.astype(str).replace("nan", "unknown").values
 
+    colors_arr = np.array(["steelblue"] * n, dtype=object)
+    lc_map: dict = {}
+    shape_arr: Optional[np.ndarray] = None
+    shape_marker_map: dict = {}
+    handles_color: list = []
+    handles_shape: list = []
+
+    if obs_path:
+        cols = [c for c in [color_col, shape_col] if c]
+        try:
+            obs = load_obs(obs_path, cols)
+            aligned = obs.reindex(coords.index.astype(str)).iloc[idx]
+
+            if color_col and color_col in aligned.columns:
+                labels = _safe_labels(aligned[color_col])
+                unique = sorted(set(labels))
+                palette = cm.get_cmap("tab20", max(len(unique), 1))
+                lc_map = {l: palette(i) for i, l in enumerate(unique)}
+                colors_arr = np.array([lc_map[l] for l in labels])
+                handles_color = [
+                    mpatches.Patch(color=lc_map[l], label=l.replace("_", " "))
+                    for l in unique
+                ]
+
+            if shape_col and shape_col in aligned.columns:
+                shape_arr = _safe_labels(aligned[shape_col])
+                unique_shapes = sorted(set(shape_arr))
+                shape_marker_map = {
+                    l: MARKERS[i % len(MARKERS)]
+                    for i, l in enumerate(unique_shapes)
+                }
+                handles_shape = [
+                    plt.scatter([], [], marker=shape_marker_map[l], c="gray",
+                                s=40, label=l.replace("_", " "))
+                    for l in unique_shapes
+                ]
+        except Exception as e:
+            logger.warning(f"Could not load metadata columns {cols}: {e}")
+
+    # ------------------------------------------------------------------ #
+    # Plot
+    # ------------------------------------------------------------------ #
     axis_labels = {
         "umap": ("UMAP 1", "UMAP 2"),
         "tsne": ("t-SNE 1", "t-SNE 2"),
@@ -483,22 +521,50 @@ def plot_cav_umap(
     xl, yl = axis_labels.get(reducer, ("Dim 1", "Dim 2"))
 
     fig, ax = plt.subplots(figsize=figsize)
-    ax.scatter(emb[:, 0], emb[:, 1], c=colors, s=4, alpha=0.5, linewidths=0)
+
+    if shape_arr is not None:
+        # Plot each shape group separately so per-group markers work
+        for label, marker in shape_marker_map.items():
+            mask = shape_arr == label
+            c_sub = colors_arr[mask]
+            ax.scatter(emb[mask, 0], emb[mask, 1], c=list(c_sub),
+                       marker=marker, s=12, alpha=0.5, linewidths=0)
+    else:
+        ax.scatter(emb[:, 0], emb[:, 1], c=list(colors_arr),
+                   s=4, alpha=0.5, linewidths=0)
+
     ax.set_xlabel(xl, fontsize=11)
     ax.set_ylabel(yl, fontsize=11)
-    ax.set_title(f"CAV-space {reducer.upper()} ({level_prefix} axes)\ncolored by {color_col}",
+    title_parts = [f"CAV-space {reducer.upper()} ({level_prefix} axes)"]
+    if color_col:
+        title_parts.append(f"color: {color_col.replace('_', ' ')}")
+    if shape_col:
+        title_parts.append(f"shape: {shape_col.replace('_', ' ')}")
+    ax.set_title("\n".join([title_parts[0], "  ·  ".join(title_parts[1:])]),
                  fontsize=12)
     ax.set_xticks([]); ax.set_yticks([])
 
-    if handles:
-        ax.legend(handles=handles, bbox_to_anchor=(1.02, 1), loc="upper left",
+    # Combined legend: color section then shape section
+    all_handles: list = []
+    if handles_color:
+        all_handles.append(
+            mpatches.Patch(color="none", label=f"── {color_col.replace('_', ' ')} ──")
+        )
+        all_handles.extend(handles_color)
+    if handles_shape:
+        all_handles.append(
+            mpatches.Patch(color="none", label=f"── {shape_col.replace('_', ' ')} ──")
+        )
+        all_handles.extend(handles_shape)
+    if all_handles:
+        ax.legend(handles=all_handles, bbox_to_anchor=(1.02, 1), loc="upper left",
                   fontsize=7, frameon=False, markerscale=2)
 
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close()
-    logger.info(f"Saved UMAP: {out_path}")
+    logger.info(f"Saved {reducer.upper()}: {out_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -527,8 +593,10 @@ def main():
     parser.add_argument("--out", required=True,
                         help="Output path (file for direction-map/cav-umap, "
                              "directory for condition-scatter).")
-    parser.add_argument("--color-col", default="cell_type",
-                        help="obs column to color UMAP by (default: cell_type).")
+    parser.add_argument("--color-col", default="tissue",
+                        help="obs column to color embedding by (default: tissue).")
+    parser.add_argument("--shape-col", default=None,
+                        help="obs column to encode as marker shape (e.g. disease_state).")
     parser.add_argument("--level", default="L0",
                         choices=["L0", "L1", "L2", "delta"],
                         help="Hierarchy level to use as embedding features (default: L0).")
@@ -573,6 +641,7 @@ def main():
             out_path=args.out,
             obs_path=args.obs,
             color_col=args.color_col,
+            shape_col=args.shape_col,
             level_prefix=args.level,
             reducer=args.reducer,
             max_cells=args.max_cells,
