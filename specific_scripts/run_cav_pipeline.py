@@ -95,26 +95,37 @@ def concept_dirs(spans_dir):
 # Step 1: collect
 # ===========================================================================
 
-def step_collect(lib_dir, pos_only=False):
+def step_collect(lib_dir, pos_only=False, pos_n=None, seed=42):
     """
     Scan spans files and return a sorted list of unique soma_joinids.
 
     pos_only=True: only collect positive IDs (pos.txt + val_pos.txt).
     Use this with --reference-pkl so the download/embed steps skip neg cells
     that are never needed — negatives come from the reference population instead.
+
+    pos_n: if set, subsample each pos/val_pos file to at most this many IDs.
+    Useful when val_pos.txt is very large and you only need a fixed evaluation set.
     """
+    import random as _random
+    rng = _random.Random(seed)
+
     spans_dir = lib_dir / "spans"
     all_ids = set()
     n_concepts = 0
     files = (["pos.txt", "val_pos.txt"] if pos_only
              else ["pos.txt", "neg.txt", "val_pos.txt", "val_neg.txt"])
+    pos_files = {"pos.txt", "val_pos.txt"}
     for concept_name, cdir in concept_dirs(spans_dir):
         for fname in files:
-            all_ids.update(read_ids(cdir / fname))
+            ids = read_ids(cdir / fname)
+            if pos_n is not None and fname in pos_files and len(ids) > pos_n:
+                ids = rng.sample(ids, pos_n)
+            all_ids.update(ids)
         n_concepts += 1
     ids = sorted(all_ids)
     mode = "pos-only (reference negatives)" if pos_only else "all"
-    logger.info(f"collect: {len(ids)} unique soma_joinids across {n_concepts} concepts ({mode})")
+    cap = f", capped at {pos_n} per pos file" if pos_n else ""
+    logger.info(f"collect: {len(ids)} unique soma_joinids across {n_concepts} concepts ({mode}{cap})")
     return ids
 
 
@@ -512,6 +523,12 @@ def main():
              "(default: 1000).  Only used when --reference-pkl is set."
     )
     parser.add_argument(
+        "--pos-n", type=int, default=None,
+        help="Subsample each pos.txt and val_pos.txt to at most this many cells "
+             "before downloading/embedding.  Useful when val_pos files are very "
+             "large and you only need a fixed training/evaluation set."
+    )
+    parser.add_argument(
         "--slim", action="store_true",
         help="Delete data/cells.h5ad and embeddings/cells.pkl after training "
              "to save disk space. CAVs and results are always kept."
@@ -540,7 +557,7 @@ def main():
     soma_joinids = None
     if start_idx <= STEPS.index("collect"):
         # In reference mode only download positive cells — negatives come from reference
-        soma_joinids = step_collect(lib_dir, pos_only=(reference_embs is not None))
+        soma_joinids = step_collect(lib_dir, pos_only=(reference_embs is not None), pos_n=args.pos_n)
 
     # ------------------------------------------------------------------ #
     # Step 2: download
@@ -551,7 +568,7 @@ def main():
             logger.info(f"download: skipping (already exists): {h5ad_path}")
         else:
             if soma_joinids is None:
-                soma_joinids = step_collect(lib_dir, pos_only=(reference_embs is not None))
+                soma_joinids = step_collect(lib_dir, pos_only=(reference_embs is not None), pos_n=args.pos_n)
             h5ad_path = step_download(
                 lib_dir, soma_joinids, args.dataset_id,
                 census_version=args.census_version
