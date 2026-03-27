@@ -449,6 +449,9 @@ def plot_cav_umap(
     """
     # Marker cycle for shape_col
     MARKERS = ["o", "s", "^", "D", "v", "P", "X", "*", "h", "<", ">"]
+    BLUE_NORMAL    = "#1f77b4"
+    RED_CONDITION  = "#d62728"
+    GRAY_BG        = "#dddddd"
 
     logger.info(f"Loading coordinates: {coords_path}")
     coords = pd.read_csv(coords_path, sep="\t", index_col=0)
@@ -470,48 +473,44 @@ def plot_cav_umap(
 
     # ------------------------------------------------------------------ #
     # Load metadata columns (Categorical-safe)
+    # cat_colors_arr  — categorical palette for color_col (panel 1)
+    # is_baseline     — bool array from condition_col (panels 2 & 3), or None
     # ------------------------------------------------------------------ #
     def _safe_labels(series) -> np.ndarray:
         """Convert obs series to string array, handling Categorical safely."""
         return series.astype(str).replace("nan", "unknown").values
 
-    colors_arr = np.array(["steelblue"] * n, dtype=object)
-    lc_map: dict = {}
+    cat_colors_arr = np.array(["steelblue"] * n, dtype=object)
+    is_baseline: Optional[np.ndarray] = None
     shape_arr: Optional[np.ndarray] = None
     shape_marker_map: dict = {}
     handles_color: list = []
     handles_shape: list = []
 
     if obs_path:
-        # Deduplicate while preserving order; include condition_col too
         cols = list(dict.fromkeys(c for c in [color_col, shape_col, condition_col] if c))
         try:
             obs = load_obs(obs_path, cols)
             aligned = obs.reindex(coords.index.astype(str)).iloc[idx]
 
+            # Categorical colors (always computed — used in panel 1)
+            if color_col and color_col in aligned.columns:
+                labels = _safe_labels(aligned[color_col])
+                unique = sorted(set(labels))
+                palette = cm.get_cmap("tab20", max(len(unique), 1))
+                lc_map  = {l: palette(i) for i, l in enumerate(unique)}
+                cat_colors_arr = np.array([lc_map[l] for l in labels])
+                handles_color  = [
+                    mpatches.Patch(color=lc_map[l], label=l.replace("_", " "))
+                    for l in unique
+                ]
+
+            # Binary condition flag (used in panels 2 & 3)
             if condition_col and condition_col in aligned.columns:
-                # Binary mode: baseline → gray, condition → red
-                BASELINE_COLOR  = "#aaaaaa"
-                CONDITION_COLOR = "#d62728"
                 cond_labels = _safe_labels(aligned[condition_col])
                 is_baseline = np.array([
                     baseline_value.lower() in l.lower() for l in cond_labels
                 ])
-                colors_arr = np.where(is_baseline, BASELINE_COLOR, CONDITION_COLOR)
-                handles_color = [
-                    mpatches.Patch(color=BASELINE_COLOR,  label=f"normal ({baseline_value})"),
-                    mpatches.Patch(color=CONDITION_COLOR, label="cancer / condition"),
-                ]
-            elif color_col and color_col in aligned.columns:
-                labels = _safe_labels(aligned[color_col])
-                unique = sorted(set(labels))
-                palette = cm.get_cmap("tab20", max(len(unique), 1))
-                lc_map = {l: palette(i) for i, l in enumerate(unique)}
-                colors_arr = np.array([lc_map[l] for l in labels])
-                handles_color = [
-                    mpatches.Patch(color=lc_map[l], label=l.replace("_", " "))
-                    for l in unique
-                ]
 
             if shape_col and shape_col in aligned.columns:
                 shape_arr = _safe_labels(aligned[shape_col])
@@ -529,7 +528,7 @@ def plot_cav_umap(
             logger.warning(f"Could not load metadata columns {cols}: {e}")
 
     # ------------------------------------------------------------------ #
-    # Plot
+    # Plot helpers
     # ------------------------------------------------------------------ #
     axis_labels = {
         "umap": ("UMAP 1", "UMAP 2"),
@@ -538,46 +537,103 @@ def plot_cav_umap(
     }
     xl, yl = axis_labels.get(reducer, ("Dim 1", "Dim 2"))
 
-    fig, ax = plt.subplots(figsize=figsize)
+    def _scatter_by_shape(ax, mask, color, s=8, alpha=0.5):
+        """Scatter points in `mask`, split by shape if shape_col is set."""
+        if shape_arr is not None:
+            for label, marker in shape_marker_map.items():
+                m = mask & (shape_arr == label)
+                if m.any():
+                    c = list(color[m]) if hasattr(color, "__len__") else color
+                    ax.scatter(emb[m, 0], emb[m, 1], c=c,
+                               marker=marker, s=s, alpha=alpha, linewidths=0)
+        else:
+            c = list(color[mask]) if hasattr(color, "__len__") else color
+            ax.scatter(emb[mask, 0], emb[mask, 1], c=c,
+                       s=s, alpha=alpha, linewidths=0)
 
-    if shape_arr is not None:
-        # Plot each shape group separately so per-group markers work
-        for label, marker in shape_marker_map.items():
-            mask = shape_arr == label
-            c_sub = colors_arr[mask]
-            ax.scatter(emb[mask, 0], emb[mask, 1], c=list(c_sub),
-                       marker=marker, s=12, alpha=0.5, linewidths=0)
+    def _fmt_ax(ax):
+        ax.set_xlabel(xl, fontsize=10)
+        ax.set_xticks([]); ax.set_yticks([])
+
+    # ------------------------------------------------------------------ #
+    # 3-panel figure when condition_col is available
+    # ------------------------------------------------------------------ #
+    if is_baseline is not None:
+        not_baseline = ~is_baseline
+        fig, axes = plt.subplots(1, 3, figsize=(figsize[0] * 3, figsize[1]))
+
+        # Panel 1 — categorical color_col
+        ax = axes[0]
+        _scatter_by_shape(ax, np.ones(n, bool), cat_colors_arr, s=6, alpha=0.5)
+        ax.set_title(color_col.replace("_", " "), fontsize=11)
+        if handles_color:
+            ax.legend(handles=handles_color, fontsize=6, frameon=False,
+                      loc="upper left", ncol=1)
+
+        # Panel 2 — all gray, normal highlighted blue
+        ax = axes[1]
+        _scatter_by_shape(ax, not_baseline, GRAY_BG,   s=4, alpha=0.25)
+        _scatter_by_shape(ax, is_baseline,  BLUE_NORMAL, s=8, alpha=0.65)
+        ax.set_title(f"normal  ({baseline_value})", fontsize=11)
+        ax.legend(handles=[
+            mpatches.Patch(color=GRAY_BG,    label="condition"),
+            mpatches.Patch(color=BLUE_NORMAL, label="normal"),
+        ], fontsize=7, frameon=False)
+
+        # Panel 3 — all gray, condition highlighted red
+        ax = axes[2]
+        _scatter_by_shape(ax, is_baseline,  GRAY_BG,       s=4, alpha=0.25)
+        _scatter_by_shape(ax, not_baseline, RED_CONDITION,  s=8, alpha=0.65)
+        ax.set_title("condition / cancer", fontsize=11)
+        leg_handles = [
+            mpatches.Patch(color=GRAY_BG,      label="normal"),
+            mpatches.Patch(color=RED_CONDITION, label="condition"),
+        ]
+        if handles_shape:
+            leg_handles += [mpatches.Patch(color="none", label=f"── {shape_col} ──")]
+            leg_handles += handles_shape
+        ax.legend(handles=leg_handles, bbox_to_anchor=(1.02, 1), loc="upper left",
+                  fontsize=7, frameon=False)
+
+        for ax in axes:
+            _fmt_ax(ax)
+        axes[0].set_ylabel(yl, fontsize=10)
+
+        shape_note = f"  ·  shape: {shape_col.replace('_',' ')}" if shape_col else ""
+        fig.suptitle(
+            f"CAV-space {reducer.upper()} ({level_prefix} axes){shape_note}",
+            fontsize=13
+        )
+
+    # ------------------------------------------------------------------ #
+    # Single panel (no condition_col)
+    # ------------------------------------------------------------------ #
     else:
-        ax.scatter(emb[:, 0], emb[:, 1], c=list(colors_arr),
-                   s=4, alpha=0.5, linewidths=0)
-
-    ax.set_xlabel(xl, fontsize=11)
-    ax.set_ylabel(yl, fontsize=11)
-    title_parts = [f"CAV-space {reducer.upper()} ({level_prefix} axes)"]
-    color_label = condition_col if condition_col else color_col
-    if color_label:
-        title_parts.append(f"color: {color_label.replace('_', ' ')}")
-    if shape_col:
-        title_parts.append(f"shape: {shape_col.replace('_', ' ')}")
-    ax.set_title("\n".join([title_parts[0], "  ·  ".join(title_parts[1:])]),
-                 fontsize=12)
-    ax.set_xticks([]); ax.set_yticks([])
-
-    # Combined legend: color section then shape section
-    all_handles: list = []
-    if handles_color:
-        all_handles.append(
-            mpatches.Patch(color="none", label=f"── {color_col.replace('_', ' ')} ──")
-        )
-        all_handles.extend(handles_color)
-    if handles_shape:
-        all_handles.append(
-            mpatches.Patch(color="none", label=f"── {shape_col.replace('_', ' ')} ──")
-        )
-        all_handles.extend(handles_shape)
-    if all_handles:
-        ax.legend(handles=all_handles, bbox_to_anchor=(1.02, 1), loc="upper left",
-                  fontsize=7, frameon=False, markerscale=2)
+        fig, ax = plt.subplots(figsize=figsize)
+        _scatter_by_shape(ax, np.ones(n, bool), cat_colors_arr, s=6, alpha=0.5)
+        _fmt_ax(ax)
+        ax.set_ylabel(yl, fontsize=11)
+        title_parts = [f"CAV-space {reducer.upper()} ({level_prefix} axes)"]
+        if color_col:
+            title_parts.append(f"color: {color_col.replace('_', ' ')}")
+        if shape_col:
+            title_parts.append(f"shape: {shape_col.replace('_', ' ')}")
+        ax.set_title("\n".join([title_parts[0], "  ·  ".join(title_parts[1:])]),
+                     fontsize=12)
+        all_handles: list = []
+        if handles_color:
+            all_handles.append(
+                mpatches.Patch(color="none", label=f"── {color_col.replace('_',' ')} ──")
+            )
+            all_handles.extend(handles_color)
+        if handles_shape:
+            all_handles.append(
+                mpatches.Patch(color="none", label=f"── {shape_col.replace('_',' ')} ──")
+            )
+            all_handles.extend(handles_shape)
+        if all_handles:
+            ax.legend(handles=all_handles, bbox_to_anchor=(1.02, 1), loc="upper left",
+                      fontsize=7, frameon=False, markerscale=2)
 
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
