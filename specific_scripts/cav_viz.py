@@ -358,8 +358,8 @@ def plot_disease_scatter(
         if obs is not None and disease_col in obs.columns:
             disease_labels = obs[disease_col].iloc[idx].fillna("unknown")
             unique_labels  = disease_labels.unique()
-            palette = plt.colormaps.get_cmap("Set2", len(unique_labels))
-            label_color = {l: palette(i) for i, l in enumerate(unique_labels)}
+            palette = plt.colormaps.get_cmap("Set2")
+            label_color = {l: palette(i / max(len(unique_labels), 1)) for i, l in enumerate(unique_labels)}
             colors = [label_color[l] for l in disease_labels]
         else:
             colors = "steelblue"
@@ -497,8 +497,8 @@ def plot_cav_umap(
             if color_col and color_col in aligned.columns:
                 labels = _safe_labels(aligned[color_col])
                 unique = sorted(set(labels))
-                palette = plt.colormaps.get_cmap("tab20", max(len(unique), 1))
-                lc_map  = {l: palette(i) for i, l in enumerate(unique)}
+                palette = plt.colormaps.get_cmap("tab20")
+                lc_map  = {l: palette(i / max(len(unique), 1)) for i, l in enumerate(unique)}
                 cat_colors_arr = np.array([lc_map[l] for l in labels])
                 handles_color  = [
                     mpatches.Patch(color=lc_map[l], label=l.replace("_", " "))
