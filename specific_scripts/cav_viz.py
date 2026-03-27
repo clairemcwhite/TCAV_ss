@@ -358,7 +358,7 @@ def plot_disease_scatter(
         if obs is not None and disease_col in obs.columns:
             disease_labels = obs[disease_col].iloc[idx].fillna("unknown")
             unique_labels  = disease_labels.unique()
-            palette = cm.get_cmap("Set2", len(unique_labels))
+            palette = plt.colormaps.get_cmap("Set2", len(unique_labels))
             label_color = {l: palette(i) for i, l in enumerate(unique_labels)}
             colors = [label_color[l] for l in disease_labels]
         else:
@@ -497,7 +497,7 @@ def plot_cav_umap(
             if color_col and color_col in aligned.columns:
                 labels = _safe_labels(aligned[color_col])
                 unique = sorted(set(labels))
-                palette = cm.get_cmap("tab20", max(len(unique), 1))
+                palette = plt.colormaps.get_cmap("tab20", max(len(unique), 1))
                 lc_map  = {l: palette(i) for i, l in enumerate(unique)}
                 cat_colors_arr = np.array([lc_map[l] for l in labels])
                 handles_color  = [
@@ -539,16 +539,18 @@ def plot_cav_umap(
 
     def _scatter_by_shape(ax, mask, color, s=8, alpha=0.5):
         """Scatter points in `mask`, split by shape if shape_col is set."""
+        # Only index color if it's a numpy array; strings/scalars are used as-is
+        def _c(m):
+            return list(color[m]) if isinstance(color, np.ndarray) else color
+
         if shape_arr is not None:
             for label, marker in shape_marker_map.items():
                 m = mask & (shape_arr == label)
                 if m.any():
-                    c = list(color[m]) if hasattr(color, "__len__") else color
-                    ax.scatter(emb[m, 0], emb[m, 1], c=c,
+                    ax.scatter(emb[m, 0], emb[m, 1], c=_c(m),
                                marker=marker, s=s, alpha=alpha, linewidths=0)
         else:
-            c = list(color[mask]) if hasattr(color, "__len__") else color
-            ax.scatter(emb[mask, 0], emb[mask, 1], c=c,
+            ax.scatter(emb[mask, 0], emb[mask, 1], c=_c(mask),
                        s=s, alpha=alpha, linewidths=0)
 
     def _fmt_ax(ax):
