@@ -483,7 +483,8 @@ def plot_cav_umap(
     handles_shape: list = []
 
     if obs_path:
-        cols = [c for c in [color_col, shape_col] if c]
+        # Deduplicate while preserving order; include condition_col too
+        cols = list(dict.fromkeys(c for c in [color_col, shape_col, condition_col] if c))
         try:
             obs = load_obs(obs_path, cols)
             aligned = obs.reindex(coords.index.astype(str)).iloc[idx]
