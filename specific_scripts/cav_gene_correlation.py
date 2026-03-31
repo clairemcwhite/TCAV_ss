@@ -377,6 +377,7 @@ def main():
             logger.warning(f"  {bname}: only {n_pair} cells total — skipping")
             continue
 
+        pair_label = f"{g_val}__{ctx_val}__{b_val}_vs_{c_val}"
         logger.info(f"  {g_val} | {ctx_val} | {b_val} ({n_base}) vs {c_val} ({n_cond})")
 
         # L2 score column for this condition CAV
@@ -385,19 +386,26 @@ def main():
             # Try baseline column
             score_col = f"{args.level}__{bname}"
         if score_col not in coords_aligned.columns:
-            logger.warning(f"  Score column not found for {cname} — skipping")
+            available = [c for c in coords_aligned.columns if args.level in c][:5]
+            logger.warning(f"  Score column not found for {cname}. "
+                           f"Tried: {args.level}__{cname} and {args.level}__{bname}. "
+                           f"Sample available cols: {available}")
             continue
+        logger.info(f"    using score column: {score_col}")
 
-        scores = coords_aligned.loc[pair_mask, score_col].values.astype(np.float32)
+        scores = coords_aligned[score_col].values[pair_mask].astype(np.float32)
         expr   = X_sub[pair_mask]
+
+        logger.info(f"    score range: [{scores.min():.3f}, {scores.max():.3f}]  "
+                    f"expr shape: {expr.shape}")
 
         result_df = correlate_scores_with_genes(scores, expr, gene_names,
                                                 min_cells=args.min_cells)
         if result_df.empty:
+            logger.warning(f"  No gene correlations produced for {pair_label} — skipping")
             continue
 
         # Save per-pair TSV
-        pair_label = f"{g_val}__{ctx_val}__{b_val}_vs_{c_val}"
         tsv_path   = out_dir / f"{pair_label}.tsv"
         result_df.to_csv(tsv_path, sep="\t", index=False)
         logger.info(f"    → saved {tsv_path.name}  "
