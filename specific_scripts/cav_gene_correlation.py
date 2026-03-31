@@ -104,10 +104,11 @@ def cells_matching(obs: pd.DataFrame,
 # Core correlation
 # ---------------------------------------------------------------------------
 
-def load_expression(h5ad_path: str) -> tuple:
+def load_expression(h5ad_path: str, gene_name_col: str = "") -> tuple:
     """
     Load gene expression matrix from h5ad.
-    Returns (X_dense: np.ndarray [n_cells, n_genes], gene_names: list, cell_ids: list).
+    Returns (X_dense, gene_ids, cell_ids, gene_name_map).
+    gene_name_map: dict {gene_id -> display_name} (empty if col not found).
     X is returned as float32 to reduce memory.
     """
     import anndata as ad
@@ -121,10 +122,27 @@ def load_expression(h5ad_path: str) -> tuple:
         X = X.toarray()
     X = X.astype(np.float32)
 
-    gene_names = list(adata.var_names)
-    cell_ids   = list(adata.obs_names)
+    gene_ids = list(adata.var_names)
+    cell_ids = list(adata.obs_names)
     logger.info(f"  Expression matrix: {X.shape[0]} cells × {X.shape[1]} genes")
-    return X, gene_names, cell_ids
+    logger.info(f"  var columns: {list(adata.var.columns)}")
+
+    # Try to find a human-readable gene name column
+    gene_name_map = {}
+    col = gene_name_col or ""
+    if not col:
+        for candidate in ["feature_name", "gene_name", "gene_symbol",
+                          "symbol", "name", "Gene", "gene"]:
+            if candidate in adata.var.columns:
+                col = candidate
+                break
+    if col and col in adata.var.columns:
+        gene_name_map = dict(zip(gene_ids, adata.var[col].astype(str).values))
+        logger.info(f"  Using gene name column: '{col}'")
+    else:
+        logger.info("  No gene name column found — output will use var_names only")
+
+    return X, gene_ids, cell_ids, gene_name_map
 
 
 def load_obs_columns(h5ad_path: str, columns: List[str]) -> pd.DataFrame:
@@ -280,6 +298,10 @@ def main():
                         help="Skip pairs with fewer cells than this (default: 10)")
     parser.add_argument("--pairs", nargs="*", default=None,
                         help="Only run these baseline CAV names (default: all)")
+    parser.add_argument("--gene-name-col", default="",
+                        help="adata.var column for human-readable gene names "
+                             "(e.g. feature_name, gene_symbol). "
+                             "Auto-detected if not specified.")
     parser.add_argument("--heatmap-width",  type=float, default=14.0)
     parser.add_argument("--heatmap-height", type=float, default=10.0)
     args = parser.parse_args()
@@ -319,7 +341,8 @@ def main():
     # ------------------------------------------------------------------ #
     # Load expression + obs
     # ------------------------------------------------------------------ #
-    X_expr, gene_names, expr_cell_ids = load_expression(args.h5ad)
+    X_expr, gene_names, expr_cell_ids, gene_name_map = load_expression(
+        args.h5ad, gene_name_col=args.gene_name_col)
     expr_id_to_row = {cid: i for i, cid in enumerate(expr_cell_ids)}
 
     obs_cols = list({args.group_col, args.context_col, args.condition_col})
@@ -409,8 +432,11 @@ def main():
             logger.warning(f"  No gene correlations produced for {pair_label} — skipping")
             continue
 
-        # Save per-pair TSV
-        tsv_path   = out_dir / f"{pair_label}.tsv"
+        # Save per-pair TSV — insert gene_name column after gene if available
+        if gene_name_map:
+            result_df.insert(1, "gene_name",
+                             result_df["gene"].map(gene_name_map).fillna(""))
+        tsv_path = out_dir / f"{pair_label}.tsv"
         result_df.to_csv(tsv_path, sep="\t", index=False)
         logger.info(f"    → saved {tsv_path.name}  "
                     f"(top gene: {result_df.iloc[0]['gene']}, r={result_df.iloc[0]['r']:.3f})")
