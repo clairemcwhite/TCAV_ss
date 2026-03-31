@@ -325,8 +325,12 @@ def main():
     obs_cols = list({args.group_col, args.context_col, args.condition_col})
     obs = load_obs_columns(args.h5ad, obs_cols)
 
-    # Align obs and coords on shared cell IDs
-    shared_ids = coords.index.astype(str).intersection(obs.index.astype(str))
+    # Normalise all indices to strings before aligning
+    coords.index = coords.index.astype(str)
+    obs.index    = obs.index.astype(str)
+    expr_id_to_row = {str(k): v for k, v in expr_id_to_row.items()}
+
+    shared_ids = coords.index.intersection(obs.index)
     logger.info(f"Shared cell IDs between coords and h5ad: {len(shared_ids)}")
     if len(shared_ids) == 0:
         logger.error("No shared cell IDs — check that cell_coordinates.tsv and h5ad use the same index.")
