@@ -198,7 +198,10 @@ def correlate_scores_with_genes(scores: np.ndarray,
         "padj":  padj,
     })
     df = df.dropna(subset=["r"])
-    df = df.sort_values("r", ascending=False).reset_index(drop=True)
+    df = df.assign(abs_r=df["r"].abs()) \
+           .sort_values("abs_r", ascending=False) \
+           .drop(columns="abs_r") \
+           .reset_index(drop=True)
     return df
 
 
