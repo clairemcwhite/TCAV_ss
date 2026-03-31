@@ -98,11 +98,12 @@ def build_cross_score_matrix(library_dir, pkl_path):
 
 def plot_cross_score(df, out_path, figsize=12):
     """Clustermap of raw cross-scores (mean CAV score per cell type)."""
+    fs = figsize if isinstance(figsize, tuple) else (figsize, figsize)
     g = sns.clustermap(
         df,
         cmap="RdBu_r",
         center=0,
-        figsize=(figsize, figsize),
+        figsize=fs,
         xticklabels=True,
         yticklabels=True,
         dendrogram_ratio=0.15,
@@ -119,13 +120,14 @@ def plot_cross_score(df, out_path, figsize=12):
 def plot_celltype_similarity(df, out_path, figsize=10):
     """Clustermap of cell-type similarity via row correlation of cross-scores."""
     corr = df.T.corr()   # correlate rows → (cell_type x cell_type)
+    fs = figsize if isinstance(figsize, tuple) else (figsize, figsize)
 
     g = sns.clustermap(
         corr,
         cmap="RdBu_r",
         center=0,
         vmin=-1, vmax=1,
-        figsize=(figsize, figsize),
+        figsize=fs,
         xticklabels=True,
         yticklabels=True,
         dendrogram_ratio=0.2,
@@ -174,13 +176,14 @@ def plot_cav_direction_similarity(library_dir, out_path, figsize=10):
     vecs, names = load_cav_directions(library_dir)
     sim = vecs @ vecs.T
     df  = pd.DataFrame(sim, index=names, columns=names)
+    fs = figsize if isinstance(figsize, tuple) else (figsize, figsize)
 
     g = sns.clustermap(
         df,
         cmap="RdBu_r",
         center=0,
         vmin=-1, vmax=1,
-        figsize=(figsize, figsize),
+        figsize=fs,
         xticklabels=True,
         yticklabels=True,
         dendrogram_ratio=0.15,
@@ -217,16 +220,24 @@ def main():
     parser.add_argument("--out", default="cav_similarity",
                         help="Output prefix (default: cav_similarity). "
                              "Produces <out>_celltypes.png and <out>_directions.png")
-    parser.add_argument("--figsize", type=int, default=12)
+    parser.add_argument("--figsize", type=int, default=12,
+                        help="Figure size in inches (used when --width/--height not set).")
+    parser.add_argument("--width", type=float, default=None,
+                        help="Figure width in inches (overrides --figsize).")
+    parser.add_argument("--height", type=float, default=None,
+                        help="Figure height in inches (overrides --figsize).")
     args = parser.parse_args()
+
+    w = args.width  if args.width  is not None else args.figsize
+    h = args.height if args.height is not None else args.figsize
 
     # Heatmap 1: cell-type similarity via cross-score correlation
     df = build_cross_score_matrix(args.library, args.pkl)
-    plot_celltype_similarity(df, f"{args.out}_celltypes.png", args.figsize - 2)
+    plot_celltype_similarity(df, f"{args.out}_celltypes.png", (w - 2, h - 2))
 
     # Heatmap 2: CAV direction cosine similarity
     print("\n" + "="*60)
-    plot_cav_direction_similarity(args.library, f"{args.out}_directions.png", args.figsize - 2)
+    plot_cav_direction_similarity(args.library, f"{args.out}_directions.png", (w - 2, h - 2))
 
 
 if __name__ == "__main__":
