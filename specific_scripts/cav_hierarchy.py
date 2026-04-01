@@ -191,15 +191,20 @@ def build_hierarchy(
     cav_names: Dict[str, tuple],
     cav_dirs: Dict[str, np.ndarray],
     lib_dir: Optional[Path] = None,
+    level_order: str = "group-context-condition",
 ) -> Dict:
     """
     Construct the orthogonal basis from flat CAV directions.
 
     For 3-level libraries (group / context / condition):
-        L0  — group direction (mean of baseline CAVs across contexts)
-        L1  — context residual (within group)
-        L2  — condition residual (within group + context)
+        L0  — primary axis (mean of baseline CAVs across secondaries)
+        L1  — secondary residual (within primary)
+        L2  — condition residual (within primary + secondary)
         delta — condition_residual − baseline_residual for matched pairs
+
+    level_order controls which field plays L0 vs L1:
+        "group-context-condition"  (default) → L0=cell_type, L1=tissue
+        "context-group-condition"            → L0=tissue,    L1=cell_type
 
     For 2-level libraries (group / condition):
         L0  — group/baseline direction
@@ -207,11 +212,10 @@ def build_hierarchy(
         (L1 is empty)
 
     Returns a hierarchy dict with keys:
-        'L0'      — {group: unit_vector}  (shared identity)
-        'L1'      — {(group, context): unit_vector}  (context residual)
-        'L2'      — {(cell_type, tissue, disease): unit_vector}  (disease residual)
-        'delta'   — {(cell_type, tissue): unit_vector}  (disease-transition delta,
-                     only where both normal and a disease CAV exist at L2)
+        'L0'      — {primary: unit_vector}
+        'L1'      — {(primary, secondary): unit_vector}
+        'L2'      — {(cell_type, tissue, disease): unit_vector}
+        'delta'   — {(cell_type, tissue): unit_vector}
         'meta'    — structured metadata for reporting
     """
     # Determine level indices from library_structure.json if available
@@ -226,6 +230,14 @@ def build_hierarchy(
     has_context = n_levels >= 3
     context_level = [i for i in range(n_levels)
                      if i != group_level and i != condition_level][0] if has_context else None
+
+    # Apply level_order: swap group and context roles if requested
+    if has_context and level_order == "context-group-condition":
+        logger.info("level_order=context-group-condition: swapping L0/L1 "
+                    "(L0=tissue/context, L1=cell_type/group)")
+        group_level, context_level = context_level, group_level
+    else:
+        logger.info(f"level_order=group-context-condition: L0=group, L1=context")
 
     def parts(name):
         return cav_names[name]
@@ -520,6 +532,14 @@ def main():
     parser.add_argument("--pca-pkl", default=None,
                         help="Path to global PCA pkl (scaler + PCA). Defaults to "
                              "lib_dir/global_pca_v1.pkl.")
+    parser.add_argument("--level-order",
+                        choices=["group-context-condition",
+                                 "context-group-condition"],
+                        default="group-context-condition",
+                        help="Order of L0/L1 decomposition. "
+                             "'group-context-condition' (default): L0=cell_type, L1=tissue. "
+                             "'context-group-condition': L0=tissue, L1=cell_type. "
+                             "L2 (disease) always comes last.")
     args = parser.parse_args()
 
     lib_dir = Path(args.lib_dir)
@@ -552,7 +572,9 @@ def main():
     # ------------------------------------------------------------------ #
     # 3. Build hierarchy
     # ------------------------------------------------------------------ #
-    hierarchy = build_hierarchy(cav_names, cav_dirs)
+    hierarchy = build_hierarchy(cav_names, cav_dirs,
+                               lib_dir=lib_dir,
+                               level_order=args.level_order)
 
     meta_path = out_dir / "hierarchy_axes.json"
     with open(meta_path, "w") as f:
