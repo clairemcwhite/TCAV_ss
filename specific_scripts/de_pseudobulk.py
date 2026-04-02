@@ -326,6 +326,7 @@ def make_summary_heatmap(lfc_matrix: pd.DataFrame, out_path: str,
 
 def compare_with_cav(de_dir: Path, cav_dir: Path, out_path: str,
                      top_n: int = 200,
+                     lfc_threshold: float = 1.5,
                      label_top_n: int = 8,
                      highlight_genes: Optional[set] = None):
     """
@@ -396,8 +397,8 @@ def compare_with_cav(de_dir: Path, cav_dir: Path, out_path: str,
             logger.warning(f"  {pair}: only {len(merged)} shared genes — skipping")
             continue
 
-        # Restrict to top_n by |log2FC|
-        merged = merged.loc[merged["lfc"].abs().nlargest(top_n).index].copy()
+        # Restrict to genes passing |log2FC| threshold
+        merged = merged.loc[merged["lfc"].abs() >= lfc_threshold].copy()
 
         rho, pval = stats.spearmanr(merged["lfc"], merged["cav_r"])
         records.append({"pair": pair, "spearman_r": rho, "pval": pval,
@@ -510,6 +511,9 @@ def main():
                         help="Skip DE computation entirely and jump straight to "
                              "the DE vs. CAV comparison plots. Requires --cav-dir "
                              "and --out-dir to already contain DE TSVs.")
+    parser.add_argument("--lfc-threshold", type=float, default=1.5,
+                        help="Minimum |log2FC| to include a gene in the comparison "
+                             "scatter (default: 1.5).")
     parser.add_argument("--label-top-n", type=int, default=8,
                         help="Label the top N genes by agreement (distance from "
                              "origin in normalised space) on each scatter (default: 8).")
@@ -544,6 +548,7 @@ def main():
             de_dir          = out_dir,
             cav_dir         = Path(args.cav_dir),
             out_path        = str(out_dir / "de_vs_cav_scatter.png"),
+            lfc_threshold   = args.lfc_threshold,
             label_top_n     = args.label_top_n,
             highlight_genes = highlight_genes,
         )
@@ -664,6 +669,7 @@ def main():
             de_dir          = out_dir,
             cav_dir         = Path(args.cav_dir),
             out_path        = str(out_dir / "de_vs_cav_scatter.png"),
+            lfc_threshold   = args.lfc_threshold,
             label_top_n     = args.label_top_n,
             highlight_genes = highlight_genes,
         )
