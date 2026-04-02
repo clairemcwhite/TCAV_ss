@@ -398,6 +398,77 @@ def draw_curves(ax, scores: np.ndarray, gene_df: pd.DataFrame,
 
 
 # ---------------------------------------------------------------------------
+# Gene strips style
+# ---------------------------------------------------------------------------
+
+def draw_gene_strips(ax, scores: np.ndarray, gene_df: pd.DataFrame,
+                     gene_expr: dict, clip_pct: float = 99.0,
+                     x_lim: tuple = None):
+    """
+    Stacked expression strips — one per gene, cells coloured by expression.
+    No smoothing, no extrapolation: every dot is a real cell at its real L2 score.
+    Positive-r genes use a warm colormap; negative-r use a cool colormap.
+    Gene labels sit on the y-axis.
+    """
+    rng      = np.random.default_rng(1)
+    n_genes  = len(gene_df)
+    strip_h  = 0.8   # half-height of each strip in data coords
+
+    pos_cmap = plt.colormaps.get_cmap("YlOrRd")
+    neg_cmap = plt.colormaps.get_cmap("YlGnBu")
+
+    yticks, ylabels = [], []
+
+    for i, (_, row) in enumerate(gene_df.iterrows()):
+        gid   = row["gene"]
+        y_ctr = n_genes - i          # top gene at top
+        if gid not in gene_expr:
+            continue
+
+        expr_raw = gene_expr[gid].astype(np.float32)
+        expr_sc  = minmax(expr_raw, clip_pct=clip_pct)
+
+        cmap   = pos_cmap if row["r"] >= 0 else neg_cmap
+        colors = cmap(0.2 + 0.75 * expr_sc)   # avoid very pale end
+
+        jitter = rng.uniform(-strip_h * 0.45, strip_h * 0.45, len(scores))
+        ax.scatter(scores, y_ctr + jitter, c=colors,
+                   s=3, alpha=0.6, linewidths=0, rasterized=True)
+
+        yticks.append(y_ctr)
+        ylabels.append(f"{row['display']}  (r={row['r']:.2f})")
+
+    # Dividing lines between strips
+    for i in range(n_genes + 1):
+        y = n_genes - i + 0.5
+        ax.axhline(y, color="#e0e0e0", lw=0.5, zorder=0)
+
+    # Vertical line at score=0
+    x_min = scores.min()
+    x_max = scores.max()
+    if x_min < 0 < x_max:
+        ax.axvline(0, color="#aaaaaa", lw=0.8, ls="--", zorder=1)
+
+    plot_xmin = x_lim[0] if x_lim else x_min - 0.05
+    plot_xmax = x_lim[1] if x_lim else x_max + 0.05
+    ax.set_xlim(plot_xmin, plot_xmax)
+    ax.set_ylim(0.5, n_genes + 0.5)
+    ax.set_yticks(yticks)
+    ax.set_yticklabels(ylabels, fontsize=7)
+    ax.set_xlabel("L2 score  (← normal    cancer →)", fontsize=8)
+    ax.tick_params(axis="x", labelsize=7)
+    ax.tick_params(axis="y", length=0)
+    ax.spines[["top", "right", "left"]].set_visible(False)
+
+    # Small colour bar legend for expression
+    sm_pos = plt.cm.ScalarMappable(cmap=pos_cmap,
+                                    norm=plt.Normalize(vmin=0, vmax=1))
+    sm_neg = plt.cm.ScalarMappable(cmap=neg_cmap,
+                                    norm=plt.Normalize(vmin=0, vmax=1))
+    return sm_pos, sm_neg
+
+
+# ---------------------------------------------------------------------------
 # Main figure
 # ---------------------------------------------------------------------------
 
@@ -408,7 +479,8 @@ def make_figure(pair_data_list: List[dict],
                 curves_h: float = 4.0,
                 title: str = "",
                 clip_pct: float = 99.0,
-                shared_xaxis: bool = False):
+                shared_xaxis: bool = False,
+                style: str = "strips"):
 
     n_pairs = len(pair_data_list)
     fig_w   = panel_w * n_pairs
@@ -453,19 +525,22 @@ def make_figure(pair_data_list: List[dict],
         draw_strip(ax_strip, pd_["scores"], pd_["labels"],
                    pd_["baseline"], pd_["condition"], x_lim=x_lim)
 
-        legend_handles = draw_curves(ax_curves, pd_["scores"],
-                                     pd_["gene_df"], pd_["gene_expr"],
-                                     clip_pct=clip_pct, x_lim=x_lim)
-
-        # Legend below panel
-        ax_curves.legend(
-            handles=legend_handles,
-            loc="upper center",
-            bbox_to_anchor=(0.5, -0.28),
-            fontsize=6.5,
-            frameon=False,
-            ncol=1,
-        )
+        if style == "strips":
+            draw_gene_strips(ax_curves, pd_["scores"],
+                             pd_["gene_df"], pd_["gene_expr"],
+                             clip_pct=clip_pct, x_lim=x_lim)
+        else:
+            legend_handles = draw_curves(ax_curves, pd_["scores"],
+                                         pd_["gene_df"], pd_["gene_expr"],
+                                         clip_pct=clip_pct, x_lim=x_lim)
+            ax_curves.legend(
+                handles=legend_handles,
+                loc="upper center",
+                bbox_to_anchor=(0.5, -0.28),
+                fontsize=6.5,
+                frameon=False,
+                ncol=1,
+            )
 
     # Shared strip legend (normal / cancer dots) — bottom right
     shared_legend = [
@@ -527,6 +602,10 @@ def main():
                         help="Figure title")
     parser.add_argument("--panel-width",   type=float, default=4.5)
     parser.add_argument("--curves-height", type=float, default=4.0)
+    parser.add_argument("--style",
+                        choices=["strips", "curves"], default="strips",
+                        help="'strips' (default): one expression dot-strip per gene, "
+                             "no extrapolation. 'curves': smoothed expression curves.")
     parser.add_argument("--clip-pct",      type=float, default=99.0,
                         help="Percentile for expression clipping before scaling "
                              "(default: 99 — raise to show more outlier signal, "
@@ -585,6 +664,7 @@ def main():
         title         = args.title,
         clip_pct      = args.clip_pct,
         shared_xaxis  = args.shared_xaxis,
+        style         = args.style,
     )
 
 
