@@ -351,8 +351,15 @@ def compare_with_cav(de_dir: Path, cav_dir: Path, out_path: str,
     axes_flat = axes.flatten()
 
     for idx, pair in enumerate(shared):
-        de  = pd.read_csv(de_files[pair],  sep="\t")
-        cav = pd.read_csv(cav_files[pair], sep="\t")
+        try:
+            de  = pd.read_csv(de_files[pair],  sep="\t")
+            cav = pd.read_csv(cav_files[pair], sep="\t")
+        except Exception as e:
+            logger.warning(f"  {pair}: could not read file — {e}, skipping")
+            continue
+        if de.empty or cav.empty:
+            logger.warning(f"  {pair}: empty file — skipping")
+            continue
 
         # Align on gene
         de  = de.rename(columns={"log2fc": "lfc"})
