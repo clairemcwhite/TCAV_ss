@@ -194,16 +194,26 @@ def run_deseq2_pair(adata_pair, donor_col: str,
     dds.deseq2()
 
     # Determine the condition value that is NOT the baseline
-    cond_values = [v for v in meta_df["condition"].unique()
-                   if v != baseline_value]
+    # Use normalised comparison to handle case/underscore/space mismatches
+    unique_conds = meta_df["condition"].unique()
+    logger.info(f"    condition values in pseudobulk: {list(unique_conds)}")
+    cond_values = [v for v in unique_conds
+                   if norm(str(v)) != norm(str(baseline_value))]
+    # Also find the exact baseline string as it appears in the data
+    baseline_actual = next(
+        (v for v in unique_conds if norm(str(v)) == norm(str(baseline_value))),
+        baseline_value,
+    )
     if not cond_values:
-        logger.warning("  Could not determine condition value for contrast")
+        logger.warning(f"  Could not determine condition value for contrast. "
+                       f"Unique values: {list(unique_conds)}, baseline: '{baseline_value}'")
         return None
     condition_value = cond_values[0]
 
+    logger.info(f"    contrast: '{condition_value}' vs '{baseline_actual}'")
     ds = DeseqStats(
         dds,
-        contrast=["condition", condition_value, baseline_value],
+        contrast=["condition", condition_value, baseline_actual],
         quiet=True,
     )
     ds.summary()
