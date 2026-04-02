@@ -188,13 +188,24 @@ def run_deseq2_pair(adata_pair, donor_col: str,
     dds = DeseqDataSet(
         counts=counts_df,
         metadata=meta_df,
-        design_factors="condition",
-        ref_level=["condition", baseline_value],
+        design="~condition",
         quiet=True,
     )
     dds.deseq2()
 
-    ds = DeseqStats(dds, quiet=True)
+    # Determine the condition value that is NOT the baseline
+    cond_values = [v for v in meta_df["condition"].unique()
+                   if v != baseline_value]
+    if not cond_values:
+        logger.warning("  Could not determine condition value for contrast")
+        return None
+    condition_value = cond_values[0]
+
+    ds = DeseqStats(
+        dds,
+        contrast=["condition", condition_value, baseline_value],
+        quiet=True,
+    )
     ds.summary()
 
     res = ds.results_df.reset_index()
