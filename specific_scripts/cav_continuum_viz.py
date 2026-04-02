@@ -95,8 +95,11 @@ def gaussian_smooth(x: np.ndarray, y: np.ndarray,
     return out
 
 
-def minmax(arr: np.ndarray) -> np.ndarray:
-    lo, hi = arr.min(), arr.max()
+def minmax(arr: np.ndarray, clip_pct: float = 99.0) -> np.ndarray:
+    """Min-max scale with percentile clipping to avoid outlier squash."""
+    lo  = np.percentile(arr, 100 - clip_pct)
+    hi  = np.percentile(arr, clip_pct)
+    arr = np.clip(arr, lo, hi)
     return (arr - lo) / (hi - lo + 1e-9)
 
 
@@ -152,7 +155,14 @@ def load_obs(h5ad_path: str, cols: List[str]) -> pd.DataFrame:
 def load_gene_corr(tsv_path: Path, top_n: int,
                    gene_name_map: Dict[str, str]) -> pd.DataFrame:
     """Load a gene correlation TSV, return top_n rows with display names."""
-    df = pd.read_csv(tsv_path, sep="\t")
+    try:
+        df = pd.read_csv(tsv_path, sep="\t")
+    except Exception as e:
+        logger.warning(f"  Could not read {tsv_path.name}: {e}")
+        return pd.DataFrame()
+    if df.empty:
+        logger.warning(f"  Gene corr file is empty: {tsv_path.name}")
+        return pd.DataFrame()
     df = df.head(top_n).copy()
     if "gene_name" not in df.columns:
         df["gene_name"] = df["gene"].map(gene_name_map).fillna(df["gene"])
@@ -272,6 +282,8 @@ def get_pair_data(pair_label: str,
         return None
 
     gene_df = load_gene_corr(tsv_path, top_n, gene_name_map)
+    if gene_df.empty:
+        return None
 
     # Pull expression for top genes
     gene_id_to_col = {g: i for i, g in enumerate(gene_ids)}
@@ -384,12 +396,13 @@ def make_figure(pair_data_list: List[dict],
     fig_h   = strip_h + curves_h + 1.2   # extra for legends
 
     fig = plt.figure(figsize=(fig_w, fig_h))
+    top_margin = 0.88 if not title else 0.85
     if title:
         fig.suptitle(title, fontsize=12, y=0.98)
 
     outer_gs = gridspec.GridSpec(
         1, n_pairs, figure=fig,
-        left=0.06, right=0.97, top=0.90, bottom=0.22,
+        left=0.06, right=0.97, top=top_margin, bottom=0.22,
         wspace=0.35,
     )
 
