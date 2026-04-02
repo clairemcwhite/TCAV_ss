@@ -360,6 +360,14 @@ def compare_with_cav(de_dir: Path, cav_dir: Path, out_path: str,
         if de.empty or cav.empty:
             logger.warning(f"  {pair}: empty file — skipping")
             continue
+        if "log2fc" not in de.columns:
+            logger.warning(f"  {pair}: DE file missing 'log2fc' column "
+                           f"(has: {list(de.columns)}) — skipping")
+            continue
+        if "r" not in cav.columns:
+            logger.warning(f"  {pair}: CAV file missing 'r' column "
+                           f"(has: {list(cav.columns)}) — skipping")
+            continue
 
         # Align on gene
         de  = de.rename(columns={"log2fc": "lfc"})
