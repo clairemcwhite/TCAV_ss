@@ -153,8 +153,13 @@ def load_obs(h5ad_path: str, cols: List[str]) -> pd.DataFrame:
 
 
 def load_gene_corr(tsv_path: Path, top_n: int,
-                   gene_name_map: Dict[str, str]) -> pd.DataFrame:
-    """Load a gene correlation TSV, return top_n rows with display names."""
+                   gene_name_map: Dict[str, str],
+                   top_n_each: int = None) -> pd.DataFrame:
+    """Load a gene correlation TSV, return selected rows with display names.
+
+    If top_n_each is set, returns top-N by positive r + top-N by negative r.
+    Otherwise returns top-N by |r| (already sorted that way by cav_gene_correlation).
+    """
     try:
         df = pd.read_csv(tsv_path, sep="\t")
     except Exception as e:
@@ -163,7 +168,13 @@ def load_gene_corr(tsv_path: Path, top_n: int,
     if df.empty:
         logger.warning(f"  Gene corr file is empty: {tsv_path.name}")
         return pd.DataFrame()
-    df = df.head(top_n).copy()
+
+    if top_n_each is not None:
+        pos = df[df["r"] >= 0].nlargest(top_n_each, "r")
+        neg = df[df["r"] <  0].nsmallest(top_n_each, "r")
+        df  = pd.concat([pos, neg]).reset_index(drop=True)
+    else:
+        df = df.head(top_n).copy()
     if "gene_name" not in df.columns:
         df["gene_name"] = df["gene"].map(gene_name_map).fillna(df["gene"])
     df["display"] = df["gene_name"].where(
@@ -188,7 +199,8 @@ def get_pair_data(pair_label: str,
                   gene_corr_dir: Path,
                   top_n: int,
                   max_cells: int,
-                  baseline_value: str) -> Optional[dict]:
+                  baseline_value: str,
+                  top_n_each: int = None) -> Optional[dict]:
     """
     Returns a dict with everything needed to draw one panel, or None on failure.
     """
@@ -281,7 +293,8 @@ def get_pair_data(pair_label: str,
         logger.warning(f"  Gene corr file not found: {tsv_path}")
         return None
 
-    gene_df = load_gene_corr(tsv_path, top_n, gene_name_map)
+    gene_df = load_gene_corr(tsv_path, top_n, gene_name_map,
+                              top_n_each=top_n_each)
     if gene_df.empty:
         return None
 
@@ -313,7 +326,7 @@ def get_pair_data(pair_label: str,
 # ---------------------------------------------------------------------------
 
 def draw_strip(ax, scores: np.ndarray, labels: np.ndarray,
-               baseline: str, condition: str):
+               baseline: str, condition: str, x_lim: tuple = None):
     """Top strip: cells as dots on L2 axis, coloured by condition."""
     rng    = np.random.default_rng(0)
     jitter = rng.uniform(-0.4, 0.4, len(scores))
@@ -326,13 +339,15 @@ def draw_strip(ax, scores: np.ndarray, labels: np.ndarray,
                c=CANCER_COLOR, s=5, alpha=STRIP_ALPHA, linewidths=0,
                label=condition)
 
-    ax.set_xlim(scores.min() - 0.05, scores.max() + 0.05)
+    ax.set_xlim(x_lim if x_lim else (scores.min() - 0.05, scores.max() + 0.05))
     ax.set_ylim(-1, 1)
     ax.axis("off")
 
 
 def draw_curves(ax, scores: np.ndarray, gene_df: pd.DataFrame,
-                gene_expr: dict, bw_frac: float = 0.08):
+                gene_expr: dict, bw_frac: float = 0.08,
+                clip_pct: float = 99.0,
+                x_lim: tuple = None):
     """Smoothed expression curves for each gene along the L2 axis."""
     x_min, x_max = scores.min(), scores.max()
     bw     = (x_max - x_min) * bw_frac
@@ -353,7 +368,7 @@ def draw_curves(ax, scores: np.ndarray, gene_df: pd.DataFrame,
             if gid not in gene_expr:
                 continue
             expr_raw = gene_expr[gid].astype(np.float32)
-            expr_sc  = minmax(expr_raw)
+            expr_sc  = minmax(expr_raw, clip_pct=clip_pct)
 
             color = cmap(start + (end - start) * (i / max(n - 1, 1)))
             y_sm  = gaussian_smooth(scores, expr_sc, x_grid, bw)
@@ -370,7 +385,9 @@ def draw_curves(ax, scores: np.ndarray, gene_df: pd.DataFrame,
     if x_min < 0 < x_max:
         ax.axvline(0, color="#aaaaaa", lw=0.8, ls="--", zorder=0)
 
-    ax.set_xlim(x_min - 0.05, x_max + 0.05)
+    plot_xmin = x_lim[0] if x_lim else x_min - 0.05
+    plot_xmax = x_lim[1] if x_lim else x_max + 0.05
+    ax.set_xlim(plot_xmin, plot_xmax)
     ax.set_ylim(-0.05, 1.1)
     ax.set_xlabel("L2 score  (← normal    cancer →)", fontsize=8)
     ax.set_ylabel("Scaled expression", fontsize=8)
@@ -389,11 +406,20 @@ def make_figure(pair_data_list: List[dict],
                 panel_w: float = 4.5,
                 strip_h: float = 0.6,
                 curves_h: float = 4.0,
-                title: str = ""):
+                title: str = "",
+                clip_pct: float = 99.0,
+                shared_xaxis: bool = False):
 
     n_pairs = len(pair_data_list)
     fig_w   = panel_w * n_pairs
     fig_h   = strip_h + curves_h + 1.2   # extra for legends
+
+    # Shared x-axis range across all panels
+    if shared_xaxis:
+        all_scores = np.concatenate([pd_["scores"] for pd_ in pair_data_list])
+        x_lim = (all_scores.min() - 0.2, all_scores.max() + 0.2)
+    else:
+        x_lim = None
 
     fig = plt.figure(figsize=(fig_w, fig_h))
     top_margin = 0.88 if not title else 0.85
@@ -425,10 +451,11 @@ def make_figure(pair_data_list: List[dict],
         ax_strip.set_title(title_str, fontsize=8, pad=4)
 
         draw_strip(ax_strip, pd_["scores"], pd_["labels"],
-                   pd_["baseline"], pd_["condition"])
+                   pd_["baseline"], pd_["condition"], x_lim=x_lim)
 
         legend_handles = draw_curves(ax_curves, pd_["scores"],
-                                     pd_["gene_df"], pd_["gene_expr"])
+                                     pd_["gene_df"], pd_["gene_expr"],
+                                     clip_pct=clip_pct, x_lim=x_lim)
 
         # Legend below panel
         ax_curves.legend(
@@ -483,7 +510,12 @@ def main():
     parser.add_argument("--level",         default="L2",
                         choices=["L0", "L1", "L2", "delta"])
     parser.add_argument("--top-n",         type=int, default=8,
-                        help="Top genes per pair to plot (default: 8)")
+                        help="Top genes by |r| to plot (default: 8). "
+                             "Overridden by --top-n-each.")
+    parser.add_argument("--top-n-each",    type=int, default=None,
+                        help="Plot top-N positive AND top-N negative genes "
+                             "separately (e.g. --top-n-each 4 gives 4 up + 4 down). "
+                             "Overrides --top-n.")
     parser.add_argument("--max-cells",     type=int, default=1000,
                         help="Max cells per pair to plot (default: 1000)")
     parser.add_argument("--bw-frac",       type=float, default=0.08,
@@ -495,6 +527,12 @@ def main():
                         help="Figure title")
     parser.add_argument("--panel-width",   type=float, default=4.5)
     parser.add_argument("--curves-height", type=float, default=4.0)
+    parser.add_argument("--clip-pct",      type=float, default=99.0,
+                        help="Percentile for expression clipping before scaling "
+                             "(default: 99 — raise to show more outlier signal, "
+                             "lower to compress more)")
+    parser.add_argument("--shared-xaxis",  action="store_true",
+                        help="Use the same x-axis range across all panels.")
     args = parser.parse_args()
 
     # Load shared data
@@ -525,6 +563,7 @@ def main():
             level             = args.level,
             gene_corr_dir     = gene_corr_dir,
             top_n             = args.top_n,
+            top_n_each        = args.top_n_each,
             max_cells         = args.max_cells,
             baseline_value    = args.baseline_value,
         )
@@ -544,6 +583,8 @@ def main():
         panel_w       = args.panel_width,
         curves_h      = args.curves_height,
         title         = args.title,
+        clip_pct      = args.clip_pct,
+        shared_xaxis  = args.shared_xaxis,
     )
 
 
