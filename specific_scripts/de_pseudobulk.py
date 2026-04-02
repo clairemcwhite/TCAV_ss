@@ -325,11 +325,18 @@ def make_summary_heatmap(lfc_matrix: pd.DataFrame, out_path: str,
 # ---------------------------------------------------------------------------
 
 def compare_with_cav(de_dir: Path, cav_dir: Path, out_path: str,
-                     top_n: int = 200):
+                     top_n: int = 200,
+                     label_top_n: int = 8,
+                     highlight_genes: Optional[set] = None):
     """
     For each pair present in both de_dir and cav_dir, compute Spearman r
     between log2FC and CAV Pearson r across the top_n genes (by |log2FC|).
     Saves a scatter summary and a correlation table.
+
+    Gene labelling:
+      - Always labels the top label_top_n genes by distance from origin
+        (high agreement in either direction).
+      - Additionally highlights any genes in highlight_genes (by symbol).
     """
     de_files  = {f.stem: f for f in de_dir.glob("*.tsv")}
     cav_files = {f.stem: f for f in cav_dir.glob("*.tsv")}
@@ -341,13 +348,12 @@ def compare_with_cav(de_dir: Path, cav_dir: Path, out_path: str,
 
     logger.info(f"Comparing {len(shared)} pairs (DE vs. CAV)")
 
-    records = []
-    fig, axes = plt.subplots(
-        max(1, (len(shared) + 2) // 3), min(3, len(shared)),
-        figsize=(5 * min(3, len(shared)),
-                 4 * max(1, (len(shared) + 2) // 3)),
-        squeeze=False,
-    )
+    records  = []
+    n_cols   = min(3, len(shared))
+    n_rows   = max(1, (len(shared) + n_cols - 1) // n_cols)
+    fig, axes = plt.subplots(n_rows, n_cols,
+                             figsize=(6 * n_cols, 5 * n_rows),
+                             squeeze=False)
     axes_flat = axes.flatten()
 
     for idx, pair in enumerate(shared):
@@ -369,21 +375,29 @@ def compare_with_cav(de_dir: Path, cav_dir: Path, out_path: str,
                            f"(has: {list(cav.columns)}) — skipping")
             continue
 
-        # Align on gene
-        de  = de.rename(columns={"log2fc": "lfc"})
-        cav = cav.rename(columns={"r": "cav_r"})
-        merged = de[["gene", "lfc"]].merge(
-            cav[["gene", "cav_r"]], on="gene", how="inner"
-        ).dropna()
+        # Merge DE and CAV on gene ID; bring in gene_name from whichever has it
+        de_cols  = ["gene", "log2fc"] + (["gene_name"] if "gene_name" in de.columns else [])
+        cav_cols = ["gene", "r"]      + (["gene_name"] if "gene_name" in cav.columns else [])
+        merged = (de[de_cols].rename(columns={"log2fc": "lfc"})
+                  .merge(cav[cav_cols].rename(columns={"r": "cav_r",
+                                                        "gene_name": "gene_name_cav"}),
+                         on="gene", how="inner")
+                  .dropna(subset=["lfc", "cav_r"]))
+
+        # Resolve display name: prefer DE gene_name, fall back to CAV, then ID
+        if "gene_name" in merged.columns:
+            merged["display"] = merged["gene_name"].fillna(merged["gene"])
+        elif "gene_name_cav" in merged.columns:
+            merged["display"] = merged["gene_name_cav"].fillna(merged["gene"])
+        else:
+            merged["display"] = merged["gene"]
 
         if len(merged) < 10:
             logger.warning(f"  {pair}: only {len(merged)} shared genes — skipping")
             continue
 
-        # Restrict to top_n by |log2FC| to focus on informative genes
-        merged = merged.reindex(
-            merged["lfc"].abs().nlargest(top_n).index
-        )
+        # Restrict to top_n by |log2FC|
+        merged = merged.loc[merged["lfc"].abs().nlargest(top_n).index].copy()
 
         rho, pval = stats.spearmanr(merged["lfc"], merged["cav_r"])
         records.append({"pair": pair, "spearman_r": rho, "pval": pval,
@@ -391,13 +405,48 @@ def compare_with_cav(de_dir: Path, cav_dir: Path, out_path: str,
         logger.info(f"  {pair}: Spearman r={rho:.3f} (p={pval:.2e}, n={len(merged)})")
 
         ax = axes_flat[idx]
-        ax.scatter(merged["lfc"], merged["cav_r"], s=4, alpha=0.4, color="#2277bb")
+
+        # Colour points: highlighted genes red, rest blue
+        is_highlight = (merged["display"].isin(highlight_genes)
+                        if highlight_genes else pd.Series(False, index=merged.index))
+        ax.scatter(merged.loc[~is_highlight, "lfc"],
+                   merged.loc[~is_highlight, "cav_r"],
+                   s=6, alpha=0.4, color="#2277bb", zorder=2)
+        if is_highlight.any():
+            ax.scatter(merged.loc[is_highlight, "lfc"],
+                       merged.loc[is_highlight, "cav_r"],
+                       s=30, alpha=0.9, color="#cc3333", zorder=4, marker="*")
+
         ax.axhline(0, color="#aaaaaa", lw=0.5)
         ax.axvline(0, color="#aaaaaa", lw=0.5)
         ax.set_xlabel("log2FC (DE)", fontsize=8)
         ax.set_ylabel("Pearson r (CAV)", fontsize=8)
         ax.set_title(f"{pair.replace('__', ' | ')}\nSpearman r={rho:.2f}",
-                     fontsize=7)
+                     fontsize=8)
+        ax.tick_params(labelsize=7)
+        ax.spines[["top", "right"]].set_visible(False)
+
+        # Label genes: top label_top_n by Euclidean distance from origin
+        # (captures high-agreement genes in any quadrant)
+        # Plus any explicitly highlighted genes not already in the top set
+        norm_lfc   = merged["lfc"]   / (merged["lfc"].abs().max()   + 1e-9)
+        norm_r     = merged["cav_r"] / (merged["cav_r"].abs().max() + 1e-9)
+        merged["dist"] = np.sqrt(norm_lfc**2 + norm_r**2)
+
+        auto_label = set(merged.nlargest(label_top_n, "dist").index)
+        hl_label   = set(merged[is_highlight].index) if is_highlight.any() else set()
+        label_idx  = auto_label | hl_label
+
+        for i in label_idx:
+            row = merged.loc[i]
+            color = "#cc3333" if (highlight_genes and
+                                   row["display"] in highlight_genes) else "#333333"
+            ax.annotate(row["display"],
+                        xy=(row["lfc"], row["cav_r"]),
+                        xytext=(4, 4), textcoords="offset points",
+                        fontsize=6, color=color,
+                        arrowprops=dict(arrowstyle="-", color="#aaaaaa",
+                                        lw=0.5))
 
     # Hide unused subplots
     for ax in axes_flat[len(shared):]:
@@ -429,7 +478,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument("--h5ad",     required=True)
+    parser.add_argument("--h5ad",     default=None,
+                        help="AnnData h5ad. Not required when --compare-only is set.")
     parser.add_argument("--lib-dir",  required=True,
                         help="CAV library dir containing library_structure.json")
     parser.add_argument("--group-col",     default="cell_type")
@@ -456,12 +506,49 @@ def main():
     parser.add_argument("--cav-dir", default=None,
                         help="Directory of cav_gene_correlation.py output TSVs. "
                              "If provided, computes Spearman r between log2FC and CAV r.")
+    parser.add_argument("--compare-only", action="store_true",
+                        help="Skip DE computation entirely and jump straight to "
+                             "the DE vs. CAV comparison plots. Requires --cav-dir "
+                             "and --out-dir to already contain DE TSVs.")
+    parser.add_argument("--label-top-n", type=int, default=8,
+                        help="Label the top N genes by agreement (distance from "
+                             "origin in normalised space) on each scatter (default: 8).")
+    parser.add_argument("--highlight-genes", nargs="*", default=None,
+                        help="Gene symbols to highlight in red on the scatter "
+                             "(e.g. PDCD1 LAG3 HAVCR2 TIGIT TOX CTLA4). "
+                             "Can also pass a file path ending in .txt with one "
+                             "gene per line.")
     parser.add_argument("--heatmap-width",  type=float, default=14.0)
     parser.add_argument("--heatmap-height", type=float, default=10.0)
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Resolve highlight genes (list of symbols or a .txt file)
+    highlight_genes = None
+    if args.highlight_genes:
+        if len(args.highlight_genes) == 1 and args.highlight_genes[0].endswith(".txt"):
+            highlight_genes = set(Path(args.highlight_genes[0]).read_text().splitlines())
+            logger.info(f"Loaded {len(highlight_genes)} highlight genes from file")
+        else:
+            highlight_genes = set(args.highlight_genes)
+            logger.info(f"Highlighting genes: {highlight_genes}")
+
+    # --compare-only: skip DE, go straight to comparison plots
+    if args.compare_only:
+        if not args.cav_dir:
+            logger.error("--compare-only requires --cav-dir")
+            sys.exit(1)
+        compare_with_cav(
+            de_dir          = out_dir,
+            cav_dir         = Path(args.cav_dir),
+            out_path        = str(out_dir / "de_vs_cav_scatter.png"),
+            label_top_n     = args.label_top_n,
+            highlight_genes = highlight_genes,
+        )
+        logger.info("Done (compare-only).")
+        return
 
     # Library structure
     structure = load_library_structure(Path(args.lib_dir))
@@ -574,9 +661,11 @@ def main():
     # CAV comparison
     if args.cav_dir:
         compare_with_cav(
-            de_dir=out_dir,
-            cav_dir=Path(args.cav_dir),
-            out_path=str(out_dir / "de_vs_cav_scatter.png"),
+            de_dir          = out_dir,
+            cav_dir         = Path(args.cav_dir),
+            out_path        = str(out_dir / "de_vs_cav_scatter.png"),
+            label_top_n     = args.label_top_n,
+            highlight_genes = highlight_genes,
         )
 
     logger.info("Done.")
