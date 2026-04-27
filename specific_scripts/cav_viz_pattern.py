@@ -13,37 +13,43 @@ The CAV direction vectors themselves are embedded in 2D — no cell coordinates 
 
 Usage
 -----
+# Static PNG:
 python specific_scripts/cav_viz_pattern.py \\
     --cav-pattern "/path/to/cavs/*/L25_concept_v1.npy" \\
     --reducer     umap \\
-    --out         results/figures/pfam_direction_map.png
+    --out         results/figures/pfam_umap.png
+
+# Interactive Plotly HTML (with PFAM hover annotations):
+python specific_scripts/cav_viz_pattern.py \\
+    --cav-pattern    "/path/to/cavs/*/L25_concept_v1.npy" \\
+    --reducer        umap \\
+    --pfam-annotations pfamA.txt \\
+    --interactive \\
+    --out            results/figures/pfam_umap.html
 """
 
-import sys
 import re
 import argparse
 import logging
 from glob import glob
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 from sklearn.decomposition import PCA
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-CELL_TYPE_COLORS = [
-    "#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00",
-    "#a65628", "#f781bf", "#999999", "#66c2a5", "#fc8d62", "#8da0cb",
-]
-
 _VERSION_SUFFIX = re.compile(r'_v\d+$')
 
+
+# ---------------------------------------------------------------------------
+# Data loading
+# ---------------------------------------------------------------------------
 
 def _concept_name(path: Path) -> str:
     """
@@ -54,17 +60,13 @@ def _concept_name(path: Path) -> str:
     """
     parent = path.parent.name
     stem   = _VERSION_SUFFIX.sub('', path.stem)
-    # If the stem contains 'concept', the directory name is the real concept identity
     if 'concept' in stem:
         return parent
     return stem
 
 
 def load_directions_from_pattern(pattern: str) -> Dict[str, np.ndarray]:
-    """
-    Load and unit-normalise CAV direction vectors from all files matching `pattern`.
-    Keys are concept names derived from file stems.
-    """
+    """Load and unit-normalise CAV direction vectors from all files matching `pattern`."""
     paths = sorted(glob(pattern))
     if not paths:
         raise FileNotFoundError(f"No files matched pattern: {pattern}")
@@ -72,7 +74,7 @@ def load_directions_from_pattern(pattern: str) -> Dict[str, np.ndarray]:
     for p in paths:
         path = Path(p)
         name = _concept_name(path)
-        v = np.load(path).astype(np.float64)
+        v    = np.load(path).astype(np.float64)
         norm = np.linalg.norm(v)
         if norm > 1e-10:
             result[name] = v / norm
@@ -82,8 +84,29 @@ def load_directions_from_pattern(pattern: str) -> Dict[str, np.ndarray]:
     return result
 
 
+def load_pfam_annotations(pfam_txt: str) -> pd.DataFrame:
+    """
+    Parse pfamA.txt (tab-separated, no header).
+    Returns a DataFrame indexed by accession with columns: short_name, description.
+    """
+    rows = []
+    with open(pfam_txt) as fh:
+        for line in fh:
+            parts = line.split('\t')
+            if len(parts) < 3:
+                continue
+            rows.append({
+                "accession":   parts[0].strip(),
+                "short_name":  parts[1].strip(),
+                "description": parts[2].strip(),
+            })
+    df = pd.DataFrame(rows).set_index("accession")
+    logger.info(f"Loaded {len(df)} PFAM annotations from {pfam_txt}")
+    return df
+
+
 # ---------------------------------------------------------------------------
-# Direction map (CAV vectors embedded in 2D)
+# Shared: compute 2-D embedding
 # ---------------------------------------------------------------------------
 
 def _make_reducer(reducer: str, n_components: int = 2):
@@ -107,6 +130,30 @@ def _make_reducer(reducer: str, n_components: int = 2):
         raise ValueError(f"Unknown reducer '{reducer}'. Choose: umap, tsne, pca")
 
 
+def _embed(cav_dirs: Dict[str, np.ndarray], reducer: str):
+    names  = list(cav_dirs.keys())
+    matrix = np.vstack([cav_dirs[n] for n in names])
+    logger.info(f"Running {reducer.upper()} on {len(names)} CAV vectors...")
+    red    = _make_reducer(reducer)
+    coords = red.fit_transform(matrix)
+    coord_df = pd.DataFrame(coords, columns=["D1", "D2"], index=names)
+    return coord_df, red
+
+
+def _axis_labels(reducer: str, red) -> Tuple[str, str]:
+    xl, yl = {"umap": ("UMAP 1", "UMAP 2"),
+               "tsne": ("t-SNE 1", "t-SNE 2"),
+               "pca":  ("PC 1", "PC 2")}.get(reducer, ("Dim 1", "Dim 2"))
+    if reducer == "pca" and hasattr(red, "explained_variance_ratio_"):
+        var = red.explained_variance_ratio_ * 100
+        xl, yl = f"PC 1 ({var[0]:.1f}%)", f"PC 2 ({var[1]:.1f}%)"
+    return xl, yl
+
+
+# ---------------------------------------------------------------------------
+# Static plot (matplotlib)
+# ---------------------------------------------------------------------------
+
 def plot_direction_map(
     cav_pattern: str,
     out_path: str,
@@ -114,18 +161,10 @@ def plot_direction_map(
     figsize: Tuple[int, int] = (10, 9),
     label_points: bool = True,
 ):
-    """Embed all matched CAV direction vectors in 2D and plot."""
+    """Embed all matched CAV direction vectors in 2D and save a static PNG."""
     cav_dirs = load_directions_from_pattern(cav_pattern)
-    if not cav_dirs:
-        raise ValueError("No valid CAV directions loaded.")
-
-    names  = list(cav_dirs.keys())
-    matrix = np.vstack([cav_dirs[n] for n in names])
-
-    logger.info(f"Running {reducer.upper()} on {len(names)} CAV vectors...")
-    red    = _make_reducer(reducer)
-    coords = red.fit_transform(matrix)
-    coord_df = pd.DataFrame(coords, columns=["D1", "D2"], index=names)
+    coord_df, red = _embed(cav_dirs, reducer)
+    xl, yl = _axis_labels(reducer, red)
 
     fig, ax = plt.subplots(figsize=figsize)
     ax.scatter(coord_df["D1"], coord_df["D2"], s=70, marker="o",
@@ -133,19 +172,10 @@ def plot_direction_map(
                linewidths=0.5, zorder=3)
 
     if label_points:
-        for name in names:
+        for name in coord_df.index:
             x, y = coord_df.loc[name, ["D1", "D2"]]
             ax.annotate(name, (x, y), fontsize=6, ha="left", va="bottom",
                         xytext=(3, 3), textcoords="offset points", color="dimgray")
-
-    xl, yl = {"umap": ("UMAP 1", "UMAP 2"),
-               "tsne": ("t-SNE 1", "t-SNE 2"),
-               "pca":  ("PC 1", "PC 2")}.get(reducer, ("Dim 1", "Dim 2"))
-
-    if reducer == "pca" and hasattr(red, "explained_variance_ratio_"):
-        var = red.explained_variance_ratio_ * 100
-        xl  = f"PC 1 ({var[0]:.1f}%)"
-        yl  = f"PC 2 ({var[1]:.1f}%)"
 
     ax.set_xlabel(xl, fontsize=11)
     ax.set_ylabel(yl, fontsize=11)
@@ -158,7 +188,72 @@ def plot_direction_map(
     plt.tight_layout()
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close()
-    logger.info(f"Saved direction map: {out_path}")
+    logger.info(f"Saved static plot: {out_path}")
+
+
+# ---------------------------------------------------------------------------
+# Interactive plot (Plotly)
+# ---------------------------------------------------------------------------
+
+def plot_direction_map_interactive(
+    cav_pattern: str,
+    out_path: str,
+    reducer: str = "pca",
+    pfam_annotations: Optional[str] = None,
+):
+    """Embed CAV direction vectors in 2D and save an interactive Plotly HTML."""
+    try:
+        import plotly.graph_objects as go
+    except ImportError:
+        raise ImportError("plotly is not installed. Run: pip install plotly")
+
+    cav_dirs = load_directions_from_pattern(cav_pattern)
+    coord_df, red = _embed(cav_dirs, reducer)
+    xl, yl = _axis_labels(reducer, red)
+
+    # Build hover text: accession + short name + description if annotations available
+    annot = None
+    if pfam_annotations:
+        annot = load_pfam_annotations(pfam_annotations)
+
+    hover_texts = []
+    for acc in coord_df.index:
+        if annot is not None and acc in annot.index:
+            row = annot.loc[acc]
+            text = (f"<b>{acc}</b> · {row['short_name']}<br>"
+                    f"{row['description']}")
+        else:
+            text = f"<b>{acc}</b>"
+        hover_texts.append(text)
+
+    fig = go.Figure(go.Scatter(
+        x=coord_df["D1"],
+        y=coord_df["D2"],
+        mode="markers",
+        marker=dict(size=8, color="steelblue", opacity=0.85,
+                    line=dict(width=0.5, color="white")),
+        text=hover_texts,
+        hovertemplate="%{text}<extra></extra>",
+        customdata=coord_df.index,
+    ))
+
+    fig.update_layout(
+        title=dict(text=f"CAV direction space ({reducer.upper()})", font_size=15),
+        xaxis_title=xl,
+        yaxis_title=yl,
+        xaxis=dict(showgrid=False, zeroline=(reducer == "pca")),
+        yaxis=dict(showgrid=False, zeroline=(reducer == "pca"),
+                   scaleanchor=None),
+        hoverlabel=dict(bgcolor="white", font_size=13),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        width=900,
+        height=750,
+    )
+
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    fig.write_html(out_path, include_plotlyjs="cdn")
+    logger.info(f"Saved interactive plot: {out_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -175,20 +270,33 @@ def main():
                         help="Glob pattern matching CAV .npy files, "
                              "e.g. '/path/to/cavs/*/L25_concept_v1.npy'.")
     parser.add_argument("--out", required=True,
-                        help="Output file path.")
+                        help="Output file path (.png for static, .html for interactive).")
     parser.add_argument("--reducer", default="pca",
                         choices=["umap", "tsne", "pca"],
                         help="Dimensionality reduction algorithm (default: pca).")
+    parser.add_argument("--interactive", action="store_true",
+                        help="Write an interactive Plotly HTML instead of a static PNG.")
+    parser.add_argument("--pfam-annotations",
+                        help="Path to pfamA.txt for hover annotations "
+                             "(accession, short name, description).")
     parser.add_argument("--no-labels", action="store_true",
-                        help="Suppress concept name labels.")
+                        help="Suppress concept name labels on static plot.")
     args = parser.parse_args()
 
-    plot_direction_map(
-        cav_pattern=args.cav_pattern,
-        out_path=args.out,
-        reducer=args.reducer,
-        label_points=not args.no_labels,
-    )
+    if args.interactive:
+        plot_direction_map_interactive(
+            cav_pattern=args.cav_pattern,
+            out_path=args.out,
+            reducer=args.reducer,
+            pfam_annotations=args.pfam_annotations,
+        )
+    else:
+        plot_direction_map(
+            cav_pattern=args.cav_pattern,
+            out_path=args.out,
+            reducer=args.reducer,
+            label_points=not args.no_labels,
+        )
 
 
 if __name__ == "__main__":
