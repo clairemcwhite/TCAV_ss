@@ -132,27 +132,26 @@ def load_clan_annotations(clan_txt: str) -> pd.DataFrame:
     return df
 
 
+_CLAN_PALETTE = [
+    "#808080", "#2f4f4f", "#556b2f", "#a0522d", "#228b22", "#7f0000",
+    "#808000", "#483d8b", "#3cb371", "#008b8b", "#4682b4", "#000080",
+    "#9acd32", "#daa520", "#8fbc8f", "#8b008b", "#b03060", "#ff0000",
+    "#00ced1", "#ff8c00", "#ffd700", "#00ff00", "#8a2be2", "#00ff7f",
+    "#dc143c", "#f4a460", "#9370db", "#0000ff", "#f08080", "#adff2f",
+    "#da70d6", "#ff00ff", "#1e90ff", "#f0e68c", "#dda0dd", "#ff1493",
+    "#afeeee", "#98fb98", "#87cefa", "#7fffd4", "#ffe4c4", "#ffb6c1",
+]
+
+
 def _clan_colors(clan_names: list) -> dict:
     """
-    Assign a distinct hex color to each clan using golden-ratio HSL spacing.
-    Clans that sort to the same index always get the same color.
+    Assign a color from the fixed palette to each clan (sorted alphabetically).
+    Cycles through the palette if there are more clans than colors.
     Unassigned / no-clan entries should use '#aaaaaa' (caller's responsibility).
     """
     unique = sorted(set(clan_names))
-    golden = 0.6180339887
-    colors = {}
-    for i, name in enumerate(unique):
-        hue = (i * golden) % 1.0
-        # Moderate saturation and lightness so colors are visible on white bg
-        h, s, l = hue, 0.65, 0.50
-        # HSL → RGB (simple formula)
-        def _f(n, h=h, s=s, l=l):
-            k = (n + h * 12) % 12
-            a = s * min(l, 1 - l)
-            return l - a * max(-1, min(k - 3, 9 - k, 1))
-        r, g, b = (int(_f(n) * 255) for n in (0, 8, 4))
-        colors[name] = f"#{r:02x}{g:02x}{b:02x}"
-    return colors
+    return {name: _CLAN_PALETTE[i % len(_CLAN_PALETTE)]
+            for i, name in enumerate(unique)}
 
 
 # ---------------------------------------------------------------------------
