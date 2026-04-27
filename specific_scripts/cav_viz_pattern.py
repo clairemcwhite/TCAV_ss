@@ -242,6 +242,16 @@ def plot_direction_map_interactive(
             text = f"<b>{acc}</b>"
         hover_texts.append(text)
 
+    # Searchable string per point (accession + short_name + description, lowercased)
+    search_strings = []
+    for acc in coord_df.index:
+        if annot is not None and acc in annot.index:
+            row = annot.loc[acc]
+            s = f"{acc} {row['short_name']} {row['description']} {row['long_description']}"
+        else:
+            s = acc
+        search_strings.append(s.lower())
+
     marker = dict(size=5, color="steelblue", opacity=0.85,
                   line=dict(width=0.5, color="white"))
 
@@ -284,8 +294,80 @@ def plot_direction_map_interactive(
         )
 
     fig = go.Figure(data=[trace], layout=layout)
+
+    # Render the plot div (no full HTML yet — we'll wrap it ourselves)
+    plot_div = fig.to_html(
+        include_plotlyjs="cdn",
+        full_html=False,
+        div_id="cavplot",
+    )
+
+    # Embed searchable strings as a JS array so the search box can use them
+    import json as _json
+    search_js = _json.dumps(search_strings)
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body {{ font-family: sans-serif; margin: 20px; }}
+  #search-bar {{
+    display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+  }}
+  #search-box {{
+    padding: 7px 12px; font-size: 15px; border: 1px solid #ccc;
+    border-radius: 6px; width: 320px;
+  }}
+  #match-count {{ color: #666; font-size: 13px; }}
+  #clear-btn {{
+    padding: 6px 12px; font-size: 13px; border: 1px solid #bbb;
+    border-radius: 6px; cursor: pointer; background: #f5f5f5;
+  }}
+</style>
+</head>
+<body>
+<div id="search-bar">
+  <input id="search-box" type="text" placeholder="Search PFAM (e.g. zinc finger, kinase, PF00001)…" oninput="filterPlot(this.value)">
+  <button id="clear-btn" onclick="clearSearch()">Clear</button>
+  <span id="match-count"></span>
+</div>
+{plot_div}
+<script>
+const searchStrings = {search_js};
+const HI = 0.85, LO = 0.07;
+
+function filterPlot(query) {{
+  query = query.trim().toLowerCase();
+  const n = searchStrings.length;
+  const opacities = new Array(n);
+  let matches = 0;
+  if (query === '') {{
+    opacities.fill(HI);
+    matches = n;
+  }} else {{
+    for (let i = 0; i < n; i++) {{
+      const hit = searchStrings[i].includes(query);
+      opacities[i] = hit ? HI : LO;
+      if (hit) matches++;
+    }}
+  }}
+  Plotly.restyle('cavplot', {{'marker.opacity': [opacities]}});
+  document.getElementById('match-count').textContent =
+    query ? matches + ' match' + (matches !== 1 ? 'es' : '') : '';
+}}
+
+function clearSearch() {{
+  const box = document.getElementById('search-box');
+  box.value = '';
+  filterPlot('');
+}}
+</script>
+</body>
+</html>"""
+
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-    fig.write_html(out_path, include_plotlyjs="cdn")
+    Path(out_path).write_text(html, encoding="utf-8")
     logger.info(f"Saved interactive {dims}D plot: {out_path}")
 
 
