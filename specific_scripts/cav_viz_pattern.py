@@ -63,8 +63,18 @@ _VERSION_SUFFIX = re.compile(r'_v\d+$')
 
 
 def _concept_name(path: Path) -> str:
-    """Derive a concept name from a .npy file path by stripping version suffixes."""
-    return _VERSION_SUFFIX.sub('', path.stem)
+    """
+    Derive a concept name from a .npy file path.
+    Uses the parent directory name when the file lives in a per-concept subdirectory
+    (e.g. cavs/PF01112/L25_concept_v1.npy → 'PF01112'), otherwise falls back to
+    the file stem with any trailing _v1-style suffix stripped.
+    """
+    parent = path.parent.name
+    stem   = _VERSION_SUFFIX.sub('', path.stem)
+    # If the stem contains 'concept', the directory name is the real concept identity
+    if 'concept' in stem:
+        return parent
+    return stem
 
 
 def load_directions_from_pattern(pattern: str) -> Dict[str, np.ndarray]:
