@@ -89,7 +89,7 @@ def load_pfam_annotations(pfam_txt: str) -> pd.DataFrame:
     Parse pfamA.txt (tab-separated, no header).
     Returns a DataFrame indexed by accession with columns:
       short_name, description, long_description.
-    col 0: accession, col 1: short name, col 2: one-line description,
+    col 0: accession, col 1: short name, col 3: full English name,
     col 7: extended paragraph description.
     """
     rows = []
@@ -101,12 +101,58 @@ def load_pfam_annotations(pfam_txt: str) -> pd.DataFrame:
             rows.append({
                 "accession":        parts[0].strip(),
                 "short_name":       parts[1].strip(),
-                "description":      parts[2].strip(),
+                "long_name":        parts[3].strip() if len(parts) > 3 else "",
                 "long_description": parts[7].strip() if len(parts) > 7 else "",
             })
     df = pd.DataFrame(rows).set_index("accession")
     logger.info(f"Loaded {len(df)} PFAM annotations from {pfam_txt}")
     return df
+
+
+def load_clan_annotations(clan_txt: str) -> pd.DataFrame:
+    """
+    Parse a clan reference file (tab-separated, no header).
+    col 0: PF accession, col 1: clan accession, col 2: clan name.
+    Returns a DataFrame indexed by PF accession with columns: clan_acc, clan_name.
+    """
+    rows = []
+    with open(clan_txt) as fh:
+        for line in fh:
+            parts = line.split('\t')
+            if len(parts) < 3:
+                continue
+            rows.append({
+                "accession": parts[0].strip(),
+                "clan_acc":  parts[1].strip(),
+                "clan_name": parts[2].strip(),
+            })
+    df = pd.DataFrame(rows).set_index("accession")
+    logger.info(f"Loaded {len(df)} clan mappings from {clan_txt} "
+                f"({df['clan_name'].nunique()} unique clans)")
+    return df
+
+
+def _clan_colors(clan_names: list) -> dict:
+    """
+    Assign a distinct hex color to each clan using golden-ratio HSL spacing.
+    Clans that sort to the same index always get the same color.
+    Unassigned / no-clan entries should use '#aaaaaa' (caller's responsibility).
+    """
+    unique = sorted(set(clan_names))
+    golden = 0.6180339887
+    colors = {}
+    for i, name in enumerate(unique):
+        hue = (i * golden) % 1.0
+        # Moderate saturation and lightness so colors are visible on white bg
+        h, s, l = hue, 0.65, 0.50
+        # HSL → RGB (simple formula)
+        def _f(n, h=h, s=s, l=l):
+            k = (n + h * 12) % 12
+            a = s * min(l, 1 - l)
+            return l - a * max(-1, min(k - 3, 9 - k, 1))
+        r, g, b = (int(_f(n) * 255) for n in (0, 8, 4))
+        colors[name] = f"#{r:02x}{g:02x}{b:02x}"
+    return colors
 
 
 # ---------------------------------------------------------------------------
@@ -206,6 +252,7 @@ def plot_direction_map_interactive(
     reducer: str = "pca",
     dims: int = 2,
     pfam_annotations: Optional[str] = None,
+    clan_annotations: Optional[str] = None,
 ):
     """Embed CAV direction vectors in 2D or 3D and save an interactive Plotly HTML."""
     try:
@@ -221,38 +268,50 @@ def plot_direction_map_interactive(
     xl, yl = _axis_labels(reducer, red)
     zl = yl.replace("2", "3")  # e.g. "UMAP 3", "PC 3"
 
-    # Build hover text
-    annot = None
-    if pfam_annotations:
-        annot = load_pfam_annotations(pfam_annotations)
+    # Load annotations
+    annot = load_pfam_annotations(pfam_annotations) if pfam_annotations else None
+    clans = load_clan_annotations(clan_annotations) if clan_annotations else None
 
-    hover_texts = []
+    # Assign per-point clan colors
+    NO_CLAN = "no clan"
+    clan_name_per_point = []
     for acc in coord_df.index:
+        if clans is not None and acc in clans.index:
+            clan_name_per_point.append(clans.loc[acc, "clan_name"])
+        else:
+            clan_name_per_point.append(NO_CLAN)
+
+    color_map = _clan_colors([c for c in clan_name_per_point if c != NO_CLAN])
+    color_map[NO_CLAN] = "#aaaaaa"
+    point_colors = [color_map[c] for c in clan_name_per_point]
+
+    # Build hover text and search strings
+    hover_texts = []
+    search_strings = []
+    for acc, clan_name in zip(coord_df.index, clan_name_per_point):
+        clan_line = ""
+        if clan_name != NO_CLAN and clans is not None and acc in clans.index:
+            clan_acc = clans.loc[acc, "clan_acc"]
+            clan_line = f"Clan: {clan_name} ({clan_acc})<br>"
+
         if annot is not None and acc in annot.index:
             row = annot.loc[acc]
             long = row["long_description"]
-            # Wrap long description at ~80 chars per line for readability
             wrapped = "<br>".join(
                 long[i:i+80] for i in range(0, min(len(long), 400), 80)
             ) + ("…" if len(long) > 400 else "")
             text = (f"<b>{acc}</b> · {row['short_name']}<br>"
-                    f"<i>{row['description']}</i><br><br>"
+                    f"<i>{row['long_name']}</i><br>"
+                    f"{clan_line}<br>"
                     f"{wrapped}")
+            s = f"{acc} {row['short_name']} {row['long_name']} {row['long_description']} {clan_name}"
         else:
-            text = f"<b>{acc}</b>"
+            text = f"<b>{acc}</b><br>{clan_line}"
+            s = f"{acc} {clan_name}"
         hover_texts.append(text)
-
-    # Searchable string per point (accession + short_name + description, lowercased)
-    search_strings = []
-    for acc in coord_df.index:
-        if annot is not None and acc in annot.index:
-            row = annot.loc[acc]
-            s = f"{acc} {row['short_name']} {row['description']} {row['long_description']}"
-        else:
-            s = acc
         search_strings.append(s.lower())
 
-    marker = dict(size=5, color="steelblue", opacity=0.85,
+    marker = dict(size=5, color=point_colors, opacity=0.85,
                   line=dict(width=0.5, color="white"))
 
     if dims == 3:
@@ -396,6 +455,8 @@ def main():
     parser.add_argument("--pfam-annotations",
                         help="Path to pfamA.txt for hover annotations "
                              "(accession, short name, description).")
+    parser.add_argument("--clan-annotations",
+                        help="Path to clan reference file for coloring points by clan.")
     parser.add_argument("--no-labels", action="store_true",
                         help="Suppress concept name labels on static plot.")
     args = parser.parse_args()
@@ -407,6 +468,7 @@ def main():
             reducer=args.reducer,
             dims=args.dims,
             pfam_annotations=args.pfam_annotations,
+            clan_annotations=args.clan_annotations,
         )
     else:
         plot_direction_map(
