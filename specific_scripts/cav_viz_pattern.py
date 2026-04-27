@@ -310,7 +310,7 @@ def plot_direction_map_interactive(
         hover_texts.append(text)
         search_strings.append(s.lower())
 
-    marker = dict(size=5, color=point_colors, opacity=0.85,
+    marker = dict(size=8 if dims == 2 else 5, color=point_colors, opacity=0.85,
                   line=dict(width=0.5, color="white"))
 
     if dims == 3:
