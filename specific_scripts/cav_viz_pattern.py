@@ -87,7 +87,10 @@ def load_directions_from_pattern(pattern: str) -> Dict[str, np.ndarray]:
 def load_pfam_annotations(pfam_txt: str) -> pd.DataFrame:
     """
     Parse pfamA.txt (tab-separated, no header).
-    Returns a DataFrame indexed by accession with columns: short_name, description.
+    Returns a DataFrame indexed by accession with columns:
+      short_name, description, long_description.
+    col 0: accession, col 1: short name, col 2: one-line description,
+    col 5: extended paragraph description.
     """
     rows = []
     with open(pfam_txt) as fh:
@@ -96,9 +99,10 @@ def load_pfam_annotations(pfam_txt: str) -> pd.DataFrame:
             if len(parts) < 3:
                 continue
             rows.append({
-                "accession":   parts[0].strip(),
-                "short_name":  parts[1].strip(),
-                "description": parts[2].strip(),
+                "accession":        parts[0].strip(),
+                "short_name":       parts[1].strip(),
+                "description":      parts[2].strip(),
+                "long_description": parts[5].strip() if len(parts) > 5 else "",
             })
     df = pd.DataFrame(rows).set_index("accession")
     logger.info(f"Loaded {len(df)} PFAM annotations from {pfam_txt}")
@@ -130,13 +134,14 @@ def _make_reducer(reducer: str, n_components: int = 2):
         raise ValueError(f"Unknown reducer '{reducer}'. Choose: umap, tsne, pca")
 
 
-def _embed(cav_dirs: Dict[str, np.ndarray], reducer: str):
+def _embed(cav_dirs: Dict[str, np.ndarray], reducer: str, dims: int = 2):
     names  = list(cav_dirs.keys())
     matrix = np.vstack([cav_dirs[n] for n in names])
-    logger.info(f"Running {reducer.upper()} on {len(names)} CAV vectors...")
-    red    = _make_reducer(reducer)
+    logger.info(f"Running {reducer.upper()} ({dims}D) on {len(names)} CAV vectors...")
+    red    = _make_reducer(reducer, n_components=dims)
     coords = red.fit_transform(matrix)
-    coord_df = pd.DataFrame(coords, columns=["D1", "D2"], index=names)
+    cols   = ["D1", "D2", "D3"][:dims]
+    coord_df = pd.DataFrame(coords, columns=cols, index=names)
     return coord_df, red
 
 
@@ -199,19 +204,24 @@ def plot_direction_map_interactive(
     cav_pattern: str,
     out_path: str,
     reducer: str = "pca",
+    dims: int = 2,
     pfam_annotations: Optional[str] = None,
 ):
-    """Embed CAV direction vectors in 2D and save an interactive Plotly HTML."""
+    """Embed CAV direction vectors in 2D or 3D and save an interactive Plotly HTML."""
     try:
         import plotly.graph_objects as go
     except ImportError:
         raise ImportError("plotly is not installed. Run: pip install plotly")
 
-    cav_dirs = load_directions_from_pattern(cav_pattern)
-    coord_df, red = _embed(cav_dirs, reducer)
-    xl, yl = _axis_labels(reducer, red)
+    if dims not in (2, 3):
+        raise ValueError("--dims must be 2 or 3")
 
-    # Build hover text: accession + short name + description if annotations available
+    cav_dirs = load_directions_from_pattern(cav_pattern)
+    coord_df, red = _embed(cav_dirs, reducer, dims=dims)
+    xl, yl = _axis_labels(reducer, red)
+    zl = yl.replace("2", "3")  # e.g. "UMAP 3", "PC 3"
+
+    # Build hover text
     annot = None
     if pfam_annotations:
         annot = load_pfam_annotations(pfam_annotations)
@@ -220,40 +230,63 @@ def plot_direction_map_interactive(
     for acc in coord_df.index:
         if annot is not None and acc in annot.index:
             row = annot.loc[acc]
+            long = row["long_description"]
+            # Wrap long description at ~80 chars per line for readability
+            wrapped = "<br>".join(
+                long[i:i+80] for i in range(0, min(len(long), 400), 80)
+            ) + ("…" if len(long) > 400 else "")
             text = (f"<b>{acc}</b> · {row['short_name']}<br>"
-                    f"{row['description']}")
+                    f"<i>{row['description']}</i><br><br>"
+                    f"{wrapped}")
         else:
             text = f"<b>{acc}</b>"
         hover_texts.append(text)
 
-    fig = go.Figure(go.Scatter(
-        x=coord_df["D1"],
-        y=coord_df["D2"],
-        mode="markers",
-        marker=dict(size=8, color="steelblue", opacity=0.85,
-                    line=dict(width=0.5, color="white")),
-        text=hover_texts,
-        hovertemplate="%{text}<extra></extra>",
-        customdata=coord_df.index,
-    ))
+    marker = dict(size=5, color="steelblue", opacity=0.85,
+                  line=dict(width=0.5, color="white"))
 
-    fig.update_layout(
-        title=dict(text=f"CAV direction space ({reducer.upper()})", font_size=15),
-        xaxis_title=xl,
-        yaxis_title=yl,
-        xaxis=dict(showgrid=False, zeroline=(reducer == "pca")),
-        yaxis=dict(showgrid=False, zeroline=(reducer == "pca"),
-                   scaleanchor=None),
-        hoverlabel=dict(bgcolor="white", font_size=13),
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-        width=900,
-        height=750,
-    )
+    if dims == 3:
+        trace = go.Scatter3d(
+            x=coord_df["D1"], y=coord_df["D2"], z=coord_df["D3"],
+            mode="markers",
+            marker=marker,
+            text=hover_texts,
+            hovertemplate="%{text}<extra></extra>",
+        )
+        layout = go.Layout(
+            title=dict(text=f"CAV direction space ({reducer.upper()}, 3D)", font_size=15),
+            scene=dict(
+                xaxis_title=xl, yaxis_title=yl, zaxis_title=zl,
+                xaxis=dict(showgrid=True, zeroline=False),
+                yaxis=dict(showgrid=True, zeroline=False),
+                zaxis=dict(showgrid=True, zeroline=False),
+            ),
+            hoverlabel=dict(bgcolor="white", font_size=12),
+            paper_bgcolor="white",
+            width=950, height=800,
+        )
+    else:
+        trace = go.Scatter(
+            x=coord_df["D1"], y=coord_df["D2"],
+            mode="markers",
+            marker=marker,
+            text=hover_texts,
+            hovertemplate="%{text}<extra></extra>",
+        )
+        layout = go.Layout(
+            title=dict(text=f"CAV direction space ({reducer.upper()})", font_size=15),
+            xaxis=dict(title=xl, showgrid=False, zeroline=(reducer == "pca")),
+            yaxis=dict(title=yl, showgrid=False, zeroline=(reducer == "pca")),
+            hoverlabel=dict(bgcolor="white", font_size=12),
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            width=950, height=800,
+        )
 
+    fig = go.Figure(data=[trace], layout=layout)
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     fig.write_html(out_path, include_plotlyjs="cdn")
-    logger.info(f"Saved interactive plot: {out_path}")
+    logger.info(f"Saved interactive {dims}D plot: {out_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -276,6 +309,8 @@ def main():
                         help="Dimensionality reduction algorithm (default: pca).")
     parser.add_argument("--interactive", action="store_true",
                         help="Write an interactive Plotly HTML instead of a static PNG.")
+    parser.add_argument("--dims", type=int, default=2, choices=[2, 3],
+                        help="Embedding dimensions for interactive plot (default: 2).")
     parser.add_argument("--pfam-annotations",
                         help="Path to pfamA.txt for hover annotations "
                              "(accession, short name, description).")
@@ -288,6 +323,7 @@ def main():
             cav_pattern=args.cav_pattern,
             out_path=args.out,
             reducer=args.reducer,
+            dims=args.dims,
             pfam_annotations=args.pfam_annotations,
         )
     else:
