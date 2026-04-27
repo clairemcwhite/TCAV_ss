@@ -150,8 +150,9 @@ def plot_direction_map(
     ax.set_xlabel(xl, fontsize=11)
     ax.set_ylabel(yl, fontsize=11)
     ax.set_title(f"CAV direction space ({reducer.upper()})\n{cav_pattern}", fontsize=12)
-    ax.axhline(0, color="lightgray", lw=0.5)
-    ax.axvline(0, color="lightgray", lw=0.5)
+    if reducer == "pca":
+        ax.axhline(0, color="lightgray", lw=0.5)
+        ax.axvline(0, color="lightgray", lw=0.5)
 
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
