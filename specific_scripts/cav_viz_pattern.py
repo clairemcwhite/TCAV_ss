@@ -90,7 +90,7 @@ def load_pfam_annotations(pfam_txt: str) -> pd.DataFrame:
     Returns a DataFrame indexed by accession with columns:
       short_name, description, long_description.
     col 0: accession, col 1: short name, col 2: one-line description,
-    col 5: extended paragraph description.
+    col 7: extended paragraph description.
     """
     rows = []
     with open(pfam_txt) as fh:
@@ -102,7 +102,7 @@ def load_pfam_annotations(pfam_txt: str) -> pd.DataFrame:
                 "accession":        parts[0].strip(),
                 "short_name":       parts[1].strip(),
                 "description":      parts[2].strip(),
-                "long_description": parts[5].strip() if len(parts) > 5 else "",
+                "long_description": parts[7].strip() if len(parts) > 7 else "",
             })
     df = pd.DataFrame(rows).set_index("accession")
     logger.info(f"Loaded {len(df)} PFAM annotations from {pfam_txt}")
