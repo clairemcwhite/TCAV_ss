@@ -180,6 +180,63 @@ def plot_localization_heatmap(
     plt.close()
 
 
+def plot_multi_cav_heatmap(
+    cav_scores: Dict[str, np.ndarray],
+    accession: str,
+    output_path: str,
+    top_n: int = 10,
+    sequence: Optional[str] = None,
+) -> None:
+    """
+    Plot per-position projection scores for the top N CAVs as a heatmap.
+
+    Rows are CAVs ranked by their peak score across the sequence (highest first).
+    Useful for visualizing which domains, motifs, or features a sequence activates.
+
+    Args:
+        cav_scores: Dict mapping CAV name -> 1D array of per-position projection scores
+        accession: Sequence identifier (used in title)
+        output_path: Path to save figure
+        top_n: Number of top CAVs to show
+        sequence: Optional sequence string for x-axis residue labels
+    """
+    # Rank CAVs by their max score across positions
+    ranked = sorted(cav_scores.items(), key=lambda kv: float(np.max(kv[1])), reverse=True)
+    top = ranked[:top_n]
+
+    cav_names = [name for name, _ in top]
+    matrix = np.stack([scores for _, scores in top], axis=0)  # (top_n, seq_len)
+
+    seq_len = matrix.shape[1]
+    fig_width = max(14, seq_len // 20)
+    fig_height = max(4, top_n * 0.5 + 1.5)
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+
+    sns.heatmap(
+        matrix,
+        ax=ax,
+        cmap="RdBu_r",
+        center=0,
+        yticklabels=cav_names,
+        xticklabels=False,
+        cbar_kws={"label": "CAV Projection", "shrink": 0.6},
+        linewidths=0,
+    )
+
+    if sequence is not None and seq_len <= 500:
+        ax.set_xticks(np.arange(seq_len) + 0.5)
+        ax.set_xticklabels(list(sequence), fontsize=6, rotation=0)
+
+    ax.set_xlabel("Position", fontsize=11)
+    ax.set_ylabel("CAV (ranked by peak score)", fontsize=11)
+    ax.set_title(f"{accession} — Top {top_n} CAV Activations", fontsize=13, fontweight="bold")
+    ax.tick_params(axis="y", labelsize=9)
+
+    plt.tight_layout()
+    plt.savefig(output_path, bbox_inches="tight", dpi=300)
+    plt.close()
+
+
 def plot_threshold_selection(
     y_true: np.ndarray,
     y_scores: np.ndarray,

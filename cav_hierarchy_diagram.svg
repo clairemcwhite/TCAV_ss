@@ -1,0 +1,202 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 600" font-family="Arial, sans-serif">
+
+  <defs>
+    <marker id="aBlue" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <polygon points="0 0, 8 4, 0 8" fill="#4a90d9"/>
+    </marker>
+    <marker id="aRed" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <polygon points="0 0, 8 4, 0 8" fill="#e05252"/>
+    </marker>
+    <marker id="aNavy" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <polygon points="0 0, 8 4, 0 8" fill="#1a5fa8"/>
+    </marker>
+    <marker id="aGreen" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <polygon points="0 0, 8 4, 0 8" fill="#2a9a2a"/>
+    </marker>
+    <marker id="aPurple" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <polygon points="0 0, 8 4, 0 8" fill="#8a4fc8"/>
+    </marker>
+    <marker id="aOrange" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <polygon points="0 0, 8 4, 0 8" fill="#d97a1a"/>
+    </marker>
+    <marker id="aGray" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <polygon points="0 0, 8 4, 0 8" fill="#999"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="980" height="600" fill="#f7f8fa"/>
+
+  <!-- Title -->
+  <text x="490" y="34" text-anchor="middle" font-size="16" font-weight="bold" fill="#1a1a2e">CAV Hierarchy: L0 / L1 / L2 via Gram-Schmidt Orthogonalization</text>
+  <text x="490" y="52" text-anchor="middle" font-size="10.5" fill="#666">One set of trained CAVs (tissue × cell type × condition) — all axes derived post-hoc, no retraining</text>
+
+  <!-- Step arrows -->
+  <line x1="213" y1="208" x2="243" y2="208" stroke="#bbb" stroke-width="1.5" marker-end="url(#aGray)"/>
+  <line x1="433" y1="208" x2="463" y2="208" stroke="#bbb" stroke-width="1.5" marker-end="url(#aGray)"/>
+  <line x1="653" y1="208" x2="683" y2="208" stroke="#bbb" stroke-width="1.5" marker-end="url(#aGray)"/>
+
+
+  <!-- ══ PANEL 1 — Trained CAVs ══════════════════════════════ -->
+  <rect x="22" y="68" width="197" height="278" rx="7" fill="white" stroke="#dde" stroke-width="1.2"/>
+  <text x="120" y="89" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#333">Step 0: Trained CAVs</text>
+  <text x="120" y="103" text-anchor="middle" font-size="9" fill="#888">tissue__cell_type__condition</text>
+
+  <line x1="50" y1="285" x2="195" y2="285" stroke="#e8e8e8" stroke-width="1"/>
+  <line x1="110" y1="120" x2="110" y2="298" stroke="#e8e8e8" stroke-width="1"/>
+
+  <!-- normal CAVs -->
+  <line x1="110" y1="285" x2="163" y2="172" stroke="#4a90d9" stroke-width="2" marker-end="url(#aBlue)"/>
+  <text x="166" y="169" font-size="8" fill="#4a90d9">lung__Tcell__normal</text>
+
+  <line x1="110" y1="285" x2="175" y2="208" stroke="#4a90d9" stroke-width="2" marker-end="url(#aBlue)"/>
+  <text x="178" y="206" font-size="8" fill="#4a90d9">lung__mac__normal</text>
+
+  <!-- disease CAVs -->
+  <line x1="110" y1="285" x2="57" y2="172" stroke="#e05252" stroke-width="2" marker-end="url(#aRed)"/>
+  <text x="12" y="169" font-size="8" fill="#e05252">lung__Tcell__cancer</text>
+
+  <line x1="110" y1="285" x2="50" y2="213" stroke="#e05252" stroke-width="2" marker-end="url(#aRed)"/>
+  <text x="12" y="211" font-size="8" fill="#e05252">lung__mac__cancer</text>
+
+  <line x1="35" y1="315" x2="52" y2="315" stroke="#4a90d9" stroke-width="2"/>
+  <text x="56" y="319" font-size="8.5" fill="#555">normal CAVs</text>
+  <line x1="35" y1="330" x2="52" y2="330" stroke="#e05252" stroke-width="2"/>
+  <text x="56" y="334" font-size="8.5" fill="#555">disease CAVs</text>
+
+
+  <!-- ══ PANEL 2 — L0 ════════════════════════════════════════ -->
+  <rect x="245" y="68" width="197" height="278" rx="7" fill="white" stroke="#dde" stroke-width="1.2"/>
+  <text x="343" y="89" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#1a5fa8">Step 1: L0 — Tissue Axis</text>
+  <text x="343" y="103" text-anchor="middle" font-size="9" fill="#888">one axis per tissue</text>
+
+  <line x1="272" y1="285" x2="418" y2="285" stroke="#e8e8e8" stroke-width="1"/>
+  <line x1="333" y1="120" x2="333" y2="298" stroke="#e8e8e8" stroke-width="1"/>
+
+  <!-- faint normals -->
+  <line x1="333" y1="285" x2="386" y2="172" stroke="#4a90d9" stroke-width="1.2" opacity="0.18" stroke-dasharray="4,2"/>
+  <line x1="333" y1="285" x2="398" y2="208" stroke="#4a90d9" stroke-width="1.2" opacity="0.18" stroke-dasharray="4,2"/>
+
+  <!-- L0 -->
+  <line x1="333" y1="285" x2="392" y2="173" stroke="#1a5fa8" stroke-width="3" marker-end="url(#aNavy)"/>
+  <text x="395" y="169" font-size="10" font-weight="bold" fill="#1a5fa8">L0 (lung)</text>
+
+  <text x="343" y="318" text-anchor="middle" font-size="8.5" fill="#777">unit( mean of all lung normal CAVs )</text>
+  <text x="343" y="331" text-anchor="middle" font-size="8.5" fill="#777">pooled across cell types</text>
+  <text x="343" y="344" text-anchor="middle" font-size="8.5" fill="#777">→ one L0 vector per tissue</text>
+
+
+  <!-- ══ PANEL 3 — L1 ════════════════════════════════════════ -->
+  <rect x="465" y="68" width="197" height="278" rx="7" fill="white" stroke="#dde" stroke-width="1.2"/>
+  <text x="563" y="89" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#2a9a2a">Step 2: L1 — Cell Type Axis</text>
+  <text x="563" y="103" text-anchor="middle" font-size="9" fill="#888">one axis per (tissue, cell type) pair</text>
+
+  <line x1="492" y1="285" x2="638" y2="285" stroke="#e8e8e8" stroke-width="1"/>
+  <line x1="553" y1="120" x2="553" y2="298" stroke="#e8e8e8" stroke-width="1"/>
+
+  <!-- L0 reference -->
+  <line x1="553" y1="285" x2="612" y2="173" stroke="#1a5fa8" stroke-width="1.5" opacity="0.22" stroke-dasharray="5,3"/>
+  <text x="614" y="170" font-size="8" fill="#1a5fa8" opacity="0.5">L0</text>
+
+  <!-- original normal CAV (faint) -->
+  <line x1="553" y1="285" x2="606" y2="172" stroke="#4a90d9" stroke-width="1.2" opacity="0.2" stroke-dasharray="3,2"/>
+  <text x="608" y="169" font-size="7.5" fill="#4a90d9" opacity="0.5">lung__Tcell__normal</text>
+
+  <!-- projection drop -->
+  <line x1="606" y1="172" x2="594" y2="208" stroke="#ccc" stroke-width="1" stroke-dasharray="2,2"/>
+  <rect x="587" y="201" width="7" height="7" fill="none" stroke="#ccc" stroke-width="0.9"/>
+
+  <!-- L1 -->
+  <line x1="553" y1="285" x2="494" y2="190" stroke="#2a9a2a" stroke-width="3" marker-end="url(#aGreen)"/>
+  <text x="471" y="186" font-size="10" font-weight="bold" fill="#2a9a2a">L1</text>
+  <text x="471" y="198" font-size="7.5" fill="#2a9a2a">(lung, Tcell)</text>
+
+  <text x="563" y="318" text-anchor="middle" font-size="8.5" fill="#777">unit( normal_CAV − proj onto L0 )</text>
+  <text x="563" y="331" text-anchor="middle" font-size="8.5" fill="#777">orthogonal to L0</text>
+  <text x="563" y="344" text-anchor="middle" font-size="8.5" fill="#777">→ one L1 per (tissue, cell type)</text>
+
+
+  <!-- ══ PANEL 4 — L2 + delta ════════════════════════════════ -->
+  <rect x="685" y="68" width="270" height="278" rx="7" fill="white" stroke="#dde" stroke-width="1.2"/>
+  <text x="820" y="89" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#8a4fc8">Step 3: L2 and Delta</text>
+  <text x="820" y="103" text-anchor="middle" font-size="9" fill="#888">applied to ALL CAVs; delta is the disease transition</text>
+
+  <line x1="710" y1="285" x2="930" y2="285" stroke="#e8e8e8" stroke-width="1"/>
+  <line x1="800" y1="120" x2="800" y2="298" stroke="#e8e8e8" stroke-width="1"/>
+
+  <!-- L0 reference -->
+  <line x1="800" y1="285" x2="858" y2="175" stroke="#1a5fa8" stroke-width="1.2" opacity="0.2" stroke-dasharray="5,3"/>
+  <text x="860" y="172" font-size="8" fill="#1a5fa8" opacity="0.4">L0</text>
+
+  <!-- L1 reference -->
+  <line x1="800" y1="285" x2="742" y2="192" stroke="#2a9a2a" stroke-width="1.2" opacity="0.2" stroke-dasharray="5,3"/>
+  <text x="723" y="188" font-size="8" fill="#2a9a2a" opacity="0.4">L1</text>
+
+  <!-- normal CAV (faint) -->
+  <line x1="800" y1="285" x2="760" y2="175" stroke="#4a90d9" stroke-width="1.2" opacity="0.18" stroke-dasharray="3,2"/>
+
+  <!-- disease CAV (faint) -->
+  <line x1="800" y1="285" x2="735" y2="170" stroke="#e05252" stroke-width="1.2" opacity="0.18" stroke-dasharray="3,2"/>
+
+  <!-- L2 normal -->
+  <line x1="800" y1="285" x2="848" y2="222" stroke="#4a90d9" stroke-width="2.2" marker-end="url(#aBlue)"/>
+  <text x="851" y="219" font-size="8.5" fill="#4a90d9">L2 (normal)</text>
+
+  <!-- L2 cancer -->
+  <line x1="800" y1="285" x2="870" y2="210" stroke="#8a4fc8" stroke-width="2.5" marker-end="url(#aPurple)"/>
+  <text x="873" y="207" font-size="8.5" fill="#8a4fc8">L2 (cancer)</text>
+
+  <!-- delta arrow -->
+  <line x1="848" y1="222" x2="870" y2="210" stroke="#d97a1a" stroke-width="2.2" marker-end="url(#aOrange)"/>
+  <text x="848" y="207" font-size="9.5" font-weight="bold" fill="#d97a1a">δ</text>
+
+  <text x="820" y="314" text-anchor="middle" font-size="8.5" fill="#777">L2 = unit( any_CAV − proj(L0) − proj(L1) )</text>
+  <text x="820" y="327" text-anchor="middle" font-size="8.5" fill="#777">δ = L2(cancer) − L2(normal)  [matched pair]</text>
+  <text x="820" y="340" text-anchor="middle" font-size="8.5" fill="#777">→ one δ per (tissue, cell type)</text>
+
+
+  <!-- ══ SUMMARY BAR ══════════════════════════════════════════ -->
+  <rect x="22" y="370" width="933" height="208" rx="7" fill="white" stroke="#dde" stroke-width="1.2"/>
+  <text x="488" y="392" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#333">What Each Level Captures</text>
+
+  <!-- L0 card -->
+  <rect x="38" y="403" width="210" height="158" rx="5" fill="#eef4fc" stroke="#b0cce8" stroke-width="1"/>
+  <text x="143" y="422" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#1a5fa8">L0 — Tissue Identity</text>
+  <line x1="55" y1="428" x2="232" y2="428" stroke="#b0cce8" stroke-width="0.8"/>
+  <text x="53" y="443" font-size="9" fill="#444">• Mean of normal CAVs per tissue</text>
+  <text x="53" y="458" font-size="9" fill="#444">• Pooled across all cell types</text>
+  <text x="53" y="473" font-size="9" fill="#444">• Shared anatomical context signal</text>
+  <text x="53" y="488" font-size="9" fill="#444">• One vector per tissue</text>
+  <text x="53" y="503" font-size="9" fill="#888" font-style="italic">Use: tissue purity checks</text>
+
+  <!-- L1 card -->
+  <rect x="262" y="403" width="210" height="158" rx="5" fill="#eefaee" stroke="#a0d8a0" stroke-width="1"/>
+  <text x="367" y="422" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#2a7a2a">L1 — Cell Type Identity</text>
+  <line x1="279" y1="428" x2="456" y2="428" stroke="#a0d8a0" stroke-width="0.8"/>
+  <text x="277" y="443" font-size="9" fill="#444">• Normal CAV residual after L0 removed</text>
+  <text x="277" y="458" font-size="9" fill="#444">• Orthogonal to tissue axis</text>
+  <text x="277" y="473" font-size="9" fill="#444">• Cell-type-specific signal</text>
+  <text x="277" y="488" font-size="9" fill="#444">• One vector per (tissue, cell type)</text>
+  <text x="277" y="503" font-size="9" fill="#888" font-style="italic">Use: annotation purity checks</text>
+
+  <!-- L2 card -->
+  <rect x="486" y="403" width="210" height="158" rx="5" fill="#f5eeff" stroke="#c8a8e8" stroke-width="1"/>
+  <text x="591" y="422" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#8a4fc8">L2 — Disease Residual</text>
+  <line x1="503" y1="428" x2="680" y2="428" stroke="#c8a8e8" stroke-width="0.8"/>
+  <text x="501" y="443" font-size="9" fill="#444">• Any CAV residual after L0 + L1</text>
+  <text x="501" y="458" font-size="9" fill="#444">• Computed for normal AND disease</text>
+  <text x="501" y="473" font-size="9" fill="#444">• Orthogonal to tissue and cell type</text>
+  <text x="501" y="488" font-size="9" fill="#444">• One vector per (tissue, cell type, cond)</text>
+  <text x="501" y="503" font-size="9" fill="#888" font-style="italic">Use: basis for delta</text>
+
+  <!-- delta card -->
+  <rect x="710" y="403" width="228" height="158" rx="5" fill="#fff8ee" stroke="#e8c88a" stroke-width="1"/>
+  <text x="824" y="422" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#c87a00">δ — Disease Transition</text>
+  <line x1="727" y1="428" x2="922" y2="428" stroke="#e8c88a" stroke-width="0.8"/>
+  <text x="725" y="443" font-size="9" fill="#444">• L2(cancer) − L2(normal)</text>
+  <text x="725" y="458" font-size="9" fill="#444">• Direction of normal → cancer shift</text>
+  <text x="725" y="473" font-size="9" fill="#444">• Confounder-free disease signal</text>
+  <text x="725" y="488" font-size="9" fill="#444">• One vector per (tissue, cell type)</text>
+  <text x="725" y="503" font-size="9" fill="#888" font-style="italic">Use: gene correlations + t-SNE</text>
+
+</svg>
