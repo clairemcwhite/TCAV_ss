@@ -360,9 +360,9 @@ def plot_direction_map_interactive(
         div_id="cavplot",
     )
 
-    # Embed searchable strings as a JS array so the search box can use them
     import json as _json
-    search_js = _json.dumps(search_strings)
+    search_js     = _json.dumps(search_strings)
+    base_colors_js = _json.dumps(point_colors)   # original hex per point
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -393,24 +393,25 @@ def plot_direction_map_interactive(
 {plot_div}
 <script>
 const searchStrings = {search_js};
-const HI = 0.85, LO = 0.07;
+const baseColors   = {base_colors_js};
+const DIM_COLOR    = 'rgba(200,200,200,0.15)';
 
 function filterPlot(query) {{
   query = query.trim().toLowerCase();
   const n = searchStrings.length;
-  const opacities = new Array(n);
+  const colors = new Array(n);
   let matches = 0;
   if (query === '') {{
-    opacities.fill(HI);
+    for (let i = 0; i < n; i++) colors[i] = baseColors[i];
     matches = n;
   }} else {{
     for (let i = 0; i < n; i++) {{
       const hit = searchStrings[i].includes(query);
-      opacities[i] = hit ? HI : LO;
+      colors[i] = hit ? baseColors[i] : DIM_COLOR;
       if (hit) matches++;
     }}
   }}
-  Plotly.restyle('cavplot', {{'marker.opacity': [opacities]}});
+  Plotly.restyle('cavplot', {{'marker.color': [colors]}});
   document.getElementById('match-count').textContent =
     query ? matches + ' match' + (matches !== 1 ? 'es' : '') : '';
 }}
