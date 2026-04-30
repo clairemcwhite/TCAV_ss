@@ -83,8 +83,17 @@ def train_concept_cav(
         class_weight=class_weight,
     )
 
-    cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=random_seed)
-    cv_scores = cross_val_score(clf, X_train, y_train, cv=cv, scoring='roc_auc')
+    if cv_folds >= 2:
+        cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=random_seed)
+        cv_scores = cross_val_score(clf, X_train, y_train, cv=cv, scoring='roc_auc')
+        cv_auroc_mean = float(cv_scores.mean())
+        cv_auroc_std = float(cv_scores.std())
+        cv_auroc_scores = cv_scores.tolist()
+    else:
+        # cv_folds=0: skip cross-validation (e.g. only 1 positive example)
+        cv_auroc_mean = None
+        cv_auroc_std = None
+        cv_auroc_scores = []
 
     clf.fit(X_train, y_train)
 
@@ -93,9 +102,9 @@ def train_concept_cav(
     train_auprc = average_precision_score(y_train, y_pred_proba)
 
     metrics = {
-        'cv_auroc_mean': float(cv_scores.mean()),
-        'cv_auroc_std': float(cv_scores.std()),
-        'cv_auroc_scores': cv_scores.tolist(),
+        'cv_auroc_mean': cv_auroc_mean,
+        'cv_auroc_std': cv_auroc_std,
+        'cv_auroc_scores': cv_auroc_scores,
         'train_auroc': float(train_auroc),
         'train_auprc': float(train_auprc),
         'n_train': len(X_train),
@@ -103,10 +112,13 @@ def train_concept_cav(
         'n_negative': int((1 - y_train).sum())
     }
 
-    logger.info(
-        f"CAV trained: CV AUROC = {metrics['cv_auroc_mean']:.3f} ± {metrics['cv_auroc_std']:.3f}, "
-        f"Train AUROC = {train_auroc:.3f}"
-    )
+    if cv_auroc_mean is not None:
+        logger.info(
+            f"CAV trained: CV AUROC = {cv_auroc_mean:.3f} ± {cv_auroc_std:.3f}, "
+            f"Train AUROC = {train_auroc:.3f}"
+        )
+    else:
+        logger.info(f"CAV trained (no CV): Train AUROC = {train_auroc:.3f}")
 
     return clf, metrics
 

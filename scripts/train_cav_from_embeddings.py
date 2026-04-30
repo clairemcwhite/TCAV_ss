@@ -76,7 +76,7 @@ def main():
     parser.add_argument('--C', type=float, default=1.0,
                         help='Logistic regression regularization strength (default: 1.0)')
     parser.add_argument('--cv-folds', type=int, default=5,
-                        help='Cross-validation folds (default: 5)')
+                        help='Cross-validation folds (default: 5); use 0 to skip CV entirely (e.g. single positive example)')
     parser.add_argument('--seed', type=int, default=42,
                         help='Random seed (default: 42)')
     parser.add_argument('--version', default='v1',
