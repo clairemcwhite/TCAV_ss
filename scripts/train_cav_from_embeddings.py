@@ -39,6 +39,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "tcav"))
 from src.train_cav import train_cav
 from src.utils.data_loader import load_sequence_embeddings
 
+import joblib
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -81,6 +83,11 @@ def main():
                         help='Random seed (default: 42)')
     parser.add_argument('--version', default='v1',
                         help='Artifact version string (default: v1)')
+    parser.add_argument('--pca-pkl', default=None,
+                        help='Path to global scaler+PCA pkl (produced by '
+                             'build_reference_population.py). When provided, '
+                             '--pca-dim and --no-pca are ignored and all CAVs '
+                             'are projected into the same coordinate system.')
     args = parser.parse_args()
 
     pos = load_vectors(args.pos)
@@ -91,6 +98,13 @@ def main():
     out_path.mkdir(parents=True, exist_ok=True)
     np.save(out_path / 'pos.npy', pos)
     np.save(out_path / 'neg.npy', neg)
+
+    scaler, pca = None, None
+    if args.pca_pkl:
+        bundle = joblib.load(args.pca_pkl)
+        scaler = bundle['scaler']
+        pca    = bundle['pca']
+        logger.info(f"Using global scaler/PCA from {args.pca_pkl}")
 
     config = {
         'use_pca': not args.no_pca,
@@ -105,7 +119,9 @@ def main():
         output_dir=str(out_path),
         config=config,
         artifact_version=args.version,
-        holdout_fraction=args.holdout
+        holdout_fraction=args.holdout,
+        scaler=scaler,
+        pca=pca,
     )
 
 
