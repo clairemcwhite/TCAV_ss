@@ -1,28 +1,42 @@
 #!/usr/bin/env python3
 """
-Combine two CAV score TSVs with a sigmoid gate.
+Combine two CAV score TSVs to filter and rank proteins.
 
-Computes:
-    final_score = specific_score * sigmoid(beta * (filter_score - threshold))
+Two modes (--mode):
 
-This upweights proteins that score high on both the specific CAV and the
-filter CAV, and suppresses proteins that are weak on the filter (e.g.
-non-bHLH hits in a MAD1-specific search).
+  hard  (default)
+        Drop proteins where filter_score < --min-filter, then rank survivors
+        by specific_score. Use this when you want a clean cutoff (e.g. "only
+        bHLH proteins, ranked by MAD1-ness").
+
+        final_score = specific_score  (for proteins passing the filter)
+
+  sigmoid
+        Soft gate: keep all proteins but weight the specific score by how
+        strongly they pass the filter. Only useful when filter scores span a
+        wide range that includes negative values; if all top proteins already
+        have positive filter scores the gate saturates to 1 and has no effect.
+
+        final_score = specific_score * sigmoid(beta * (filter_score - threshold))
 
 Usage
 -----
+# Hard filter (recommended): keep bHLH proteins, rank by MAD1-ness
 python specific_scripts/combine_cav_scores.py \\
     --specific  results/MAD1_specific_hits.tsv \\
     --filter    results/HLH_hits.tsv \\
-    --out       results/MAD1_bHLH_hits.tsv
+    --out       results/MAD1_bHLH_hits.tsv \\
+    --mode      hard \\
+    --min-filter 3.0
 
-# Tune the gate:
+# Sigmoid gate (soft):
 python specific_scripts/combine_cav_scores.py \\
     --specific   results/MAD1_specific_hits.tsv \\
     --filter     results/HLH_hits.tsv \\
     --out        results/MAD1_bHLH_hits.tsv \\
-    --threshold  0.5   # filter_score below this is suppressed
-    --beta       10    # steepness of the sigmoid gate (higher = harder cutoff)
+    --mode       sigmoid \\
+    --threshold  0.0 \\
+    --beta       5.0
 """
 
 import argparse
@@ -36,12 +50,12 @@ logger = logging.getLogger(__name__)
 
 
 def sigmoid(x):
-    return 1.0 / (1.0 + np.exp(-x))
+    return 1.0 / (1.0 + np.exp(-np.clip(x, -500, 500)))
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Gate a specific CAV score by a filter CAV score via sigmoid.",
+        description="Filter/rank proteins by combining two CAV score TSVs.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -51,11 +65,16 @@ def main():
                         help='TSV of filter CAV scores (e.g. HLH_hits.tsv).')
     parser.add_argument('--out', required=True,
                         help='Output TSV path.')
+    parser.add_argument('--mode', choices=['hard', 'sigmoid'], default='hard',
+                        help='Filtering mode (default: hard).')
+    parser.add_argument('--min-filter', type=float, default=0.0,
+                        help='[hard mode] Drop proteins with filter_score below this '
+                             '(default: 0.0). Look at the filter score distribution '
+                             'to pick a meaningful cutoff.')
     parser.add_argument('--threshold', type=float, default=0.0,
-                        help='filter_score value at which the sigmoid gate = 0.5 '
-                             '(default: 0.0, i.e. the mean of the score distribution).')
+                        help='[sigmoid mode] filter_score at which gate=0.5 (default: 0.0).')
     parser.add_argument('--beta', type=float, default=5.0,
-                        help='Sigmoid steepness: higher = harder cutoff (default: 5.0).')
+                        help='[sigmoid mode] Sigmoid steepness (default: 5.0).')
     parser.add_argument('--k', type=int, default=100,
                         help='Top-k results to output (default: 100; -1 for all).')
     args = parser.parse_args()
@@ -71,7 +90,7 @@ def main():
             raise ValueError(f"{name} TSV must have 'protein_id' and 'cav_score' columns.")
 
     # ------------------------------------------------------------------ #
-    # Merge on protein_id
+    # Merge on protein_id (inner: only proteins present in both files)
     # ------------------------------------------------------------------ #
     merged = specific[['protein_id', 'cav_score']].merge(
         filter_[['protein_id', 'cav_score']],
@@ -85,14 +104,25 @@ def main():
     logger.info(f"  {len(merged):,} proteins after merge")
 
     # ------------------------------------------------------------------ #
-    # Compute final score
+    # Score
     # ------------------------------------------------------------------ #
-    gate = sigmoid(args.beta * (merged['cav_score_filter'] - args.threshold))
-    merged['gate'] = gate
-    merged['final_score'] = merged['cav_score_specific'] * gate
+    if args.mode == 'hard':
+        before = len(merged)
+        merged = merged[merged['cav_score_filter'] >= args.min_filter].copy()
+        logger.info(
+            f"  Hard filter (min_filter={args.min_filter}): "
+            f"{before - len(merged):,} proteins removed, {len(merged):,} remain"
+        )
+        merged['final_score'] = merged['cav_score_specific']
 
-    logger.info(f"  threshold={args.threshold}, beta={args.beta}")
-    logger.info(f"  gate range: {gate.min():.3f} – {gate.max():.3f}")
+    else:  # sigmoid
+        gate = sigmoid(args.beta * (merged['cav_score_filter'] - args.threshold))
+        merged['gate'] = gate
+        merged['final_score'] = merged['cav_score_specific'] * gate
+        logger.info(
+            f"  Sigmoid gate (threshold={args.threshold}, beta={args.beta}): "
+            f"gate range {gate.min():.3f} – {gate.max():.3f}"
+        )
 
     # ------------------------------------------------------------------ #
     # Rank and select top-k

@@ -17,7 +17,10 @@ Tab-separated, one entry per line, no header.
 Each line is one of:
     accession                       → whole-sequence mode (no span)
     accession  TAB  pos             → single-position mode (PTM etc.)
-    accession  TAB  start  TAB  end → window mode (half-open: [start, end))
+    accession  TAB  start  TAB  end → window mode (1-indexed, inclusive: [start, end])
+    accession  TAB  p1,p2,p3,...    → position-list mode (mean of listed positions)
+
+All positions are 1-indexed (matching UniProt annotation conventions).
 
 The same accession may appear on multiple lines — each line produces a
 separate embedding vector. This allows multiple negative windows from one
@@ -143,7 +146,7 @@ def load_sequence_embeddings(
 # Spans file loading
 # ---------------------------------------------------------------------------
 
-SpanEntry = Optional[Tuple[int, ...]]  # None | (pos,) | (start, end)
+SpanEntry = Optional[Tuple[int, ...]]  # None | (pos,) | (start, end) | (p1, p2, p3, ...)
 
 # A spans list is a sequence of (accession, span) pairs.
 # Multiple entries with the same accession are allowed and each produces
@@ -159,9 +162,10 @@ def load_spans(spans_path: str) -> SpansList:
     allowing multiple windows or positions per protein.
 
     Each span is one of:
-        None          — whole-sequence mode (no span columns)
-        (pos,)        — single-position mode (one span column)
-        (start, end)  — window mode, half-open (two span columns)
+        None              — whole-sequence mode (no span columns)
+        (pos,)            — single-position mode (one span column, 1-indexed)
+        (start, end)      — window mode, inclusive (two span columns, 1-indexed)
+        (p1, p2, p3, ...) — position-list mode (second column is comma-separated, 1-indexed)
     """
     spans: SpansList = []
 
@@ -177,7 +181,12 @@ def load_spans(spans_path: str) -> SpansList:
             if len(parts) == 1:
                 spans.append((accession, None))
             elif len(parts) == 2:
-                spans.append((accession, (int(parts[1]),)))
+                col = parts[1]
+                if ',' in col:
+                    positions = tuple(int(p) for p in col.split(','))
+                    spans.append((accession, positions))
+                else:
+                    spans.append((accession, (int(col),)))
             elif len(parts) == 3:
                 spans.append((accession, (int(parts[1]), int(parts[2]))))
             else:
@@ -205,7 +214,8 @@ def pool_span(
 
     Args:
         aa_embeddings_row:      Shape (max_seq_len, hidden_dim). May be padded.
-        span:                   None | (pos,) | (start, end) from load_spans().
+        span:                   None | (pos,) | (start, end) | (p1, p2, ...) from load_spans().
+                                All positions are 1-indexed (matching UniProt conventions).
         sequence_embedding_row: Shape (hidden_dim,). Used for whole-sequence mode
                                 if present; falls back to mean-pooling aa_embeddings.
         seq_len:                Actual (unpadded) sequence length. If None, uses
@@ -224,21 +234,30 @@ def pool_span(
         return aa_embeddings_row[:seq_len].mean(axis=0)
 
     if len(span) == 1:
-        # Single-position mode
+        # Single-position mode (1-indexed)
         pos = span[0]
-        if pos < 0 or pos >= seq_len:
+        if pos < 1 or pos > seq_len:
             raise ValueError(
-                f"Position {pos} out of range for sequence of length {seq_len}"
+                f"Position {pos} out of range for sequence of length {seq_len} (1-indexed)"
             )
-        return aa_embeddings_row[pos]
+        return aa_embeddings_row[pos - 1]
 
-    # Window mode
-    start, end = span
-    if start < 0 or end > seq_len or start >= end:
-        raise ValueError(
-            f"Span [{start}, {end}) invalid for sequence of length {seq_len}"
-        )
-    return aa_embeddings_row[start:end].mean(axis=0)
+    if len(span) == 2:
+        # Window mode (1-indexed, inclusive [start, end])
+        start, end = span
+        if start < 1 or end > seq_len or start > end:
+            raise ValueError(
+                f"Span [{start}, {end}] invalid for sequence of length {seq_len} (1-indexed, inclusive)"
+            )
+        return aa_embeddings_row[start - 1:end].mean(axis=0)
+
+    # Position-list mode: mean of specified positions (1-indexed)
+    for pos in span:
+        if pos < 1 or pos > seq_len:
+            raise ValueError(
+                f"Position {pos} out of range for sequence of length {seq_len} (1-indexed)"
+            )
+    return aa_embeddings_row[[p - 1 for p in span]].mean(axis=0)
 
 
 # ---------------------------------------------------------------------------
