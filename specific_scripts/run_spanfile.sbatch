@@ -74,17 +74,21 @@ python $tcav_dir/scripts/train_cav_from_embeddings.py \
     --pca-pkl  $ref_pca
 
 # -------------
-### Step 4: Embed search fasta
+### Step 4: Embed search fasta (skipped if pkl already exists)
 # -------------
-python /groups/clairemcwhite/claire_workspace/github/mcwlab_utils/hf_embed_new.py \
-    -f $SEARCH_FASTA \
-    -o $search_pkl \
-    --get_sequence_embedding \
-    --strat mean \
-    -l -11 \
-    -m /groups/clairemcwhite/models/ESMplusplus_large \
-    -b 1 \
-    --max_length 2048
+if [ -f "$search_pkl" ]; then
+    echo "Skipping embedding: $search_pkl already exists"
+else
+    python /groups/clairemcwhite/claire_workspace/github/mcwlab_utils/hf_embed_new.py \
+        -f $SEARCH_FASTA \
+        -o $search_pkl \
+        --get_sequence_embedding \
+        --strat mean \
+        -l -11 \
+        -m /groups/clairemcwhite/models/ESMplusplus_large \
+        -b 1 \
+        --max_length 2048
+fi
 
 # -------------
 ### Step 5: Query search fasta against CAV

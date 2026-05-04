@@ -74,6 +74,71 @@ def score_and_rank(embs: np.ndarray, cav_vec: np.ndarray, scaler, pca) -> np.nda
     return X @ cav_vec
 
 
+def parse_fasta_lengths(fasta_path: str) -> dict:
+    """Return {accession: length} parsed from a FASTA file."""
+    lengths = {}
+    current_id = None
+    current_len = 0
+    with open(fasta_path) as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith('>'):
+                if current_id is not None:
+                    lengths[current_id] = current_len
+                current_id = line[1:].split()[0]
+                current_len = 0
+            else:
+                current_len += len(line)
+    if current_id is not None:
+        lengths[current_id] = current_len
+    return lengths
+
+
+def length_correct_scores(
+    raw_scores: np.ndarray,
+    protein_ids: list,
+    protein_lengths: dict,
+    K: int,
+    ref_mean: np.ndarray,
+    cav_vec: np.ndarray,
+    scaler,
+    pca,
+) -> np.ndarray:
+    """
+    Correct CAV scores for motif dilution in whole-sequence embeddings.
+
+    Models full_seq ≈ (K/L)*span + ((L-K)/L)*μ, rearranges to estimate the
+    span embedding, and scores that instead. In the preprocessed CAV space:
+
+        corrected_score = (L/K) * raw_score - ((L-K)/K) * μ_proj
+
+    where μ_proj is the reference mean projected onto the CAV direction.
+    """
+    mu = ref_mean.reshape(1, -1).astype('float32')
+    if scaler is not None:
+        mu = scaler.transform(mu)
+    if pca is not None:
+        mu = pca.transform(mu)
+    mu_proj = float(mu @ cav_vec)
+
+    corrected = np.empty_like(raw_scores)
+    missing = []
+    for i, pid in enumerate(protein_ids):
+        L = protein_lengths.get(pid)
+        if L is None:
+            missing.append(pid)
+            corrected[i] = raw_scores[i]
+            continue
+        corrected[i] = (L / K) * raw_scores[i] - ((L - K) / K) * mu_proj
+
+    if missing:
+        logger.warning(
+            f"{len(missing)} proteins not found in FASTA (lengths unknown); "
+            "raw scores used for those entries."
+        )
+    return corrected
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Rank proteins by projection onto a CAV direction.",
@@ -91,6 +156,15 @@ def main():
                              'use -1 for all proteins ranked).')
     parser.add_argument('--version', default='v1',
                         help='CAV artifact version suffix (default: v1).')
+    parser.add_argument('--length-correct', action='store_true',
+                        help='Correct scores for motif dilution in whole-sequence embeddings. '
+                             'Requires --span-length, --fasta, and --ref-pkl.')
+    parser.add_argument('--span-length', type=int, default=None,
+                        help='Length K of the motif span used for CAV training (number of residues).')
+    parser.add_argument('--fasta', default=None,
+                        help='FASTA file for the search proteome, used to look up protein lengths.')
+    parser.add_argument('--ref-pkl', default=None,
+                        help='Reference negative pkl used to compute the background mean embedding μ.')
     args = parser.parse_args()
 
     # ------------------------------------------------------------------ #
@@ -112,6 +186,32 @@ def main():
     # ------------------------------------------------------------------ #
     scores = score_and_rank(embs, cav_vec, scaler, pca)
     logger.info(f"  Score range: min={scores.min():.4f}, mean={scores.mean():.4f}, max={scores.max():.4f}")
+
+    # ------------------------------------------------------------------ #
+    # Length correction (optional)
+    # ------------------------------------------------------------------ #
+    if args.length_correct:
+        missing = [a for a in ('span_length', 'fasta', 'ref_pkl')
+                   if getattr(args, a) is None]
+        if missing:
+            raise ValueError(
+                f"--length-correct requires: {', '.join('--' + a.replace('_','-') for a in missing)}"
+            )
+        logger.info("Applying length correction to scores")
+        protein_lengths = parse_fasta_lengths(args.fasta)
+        logger.info(f"  Loaded lengths for {len(protein_lengths):,} proteins from {args.fasta}")
+        ref_embs, _ = load_sequence_embeddings(args.ref_pkl)
+        ref_mean = ref_embs.mean(axis=0)
+        logger.info(f"  Reference mean computed from {len(ref_embs):,} sequences ({args.ref_pkl})")
+        scores = length_correct_scores(
+            scores, protein_ids, protein_lengths,
+            K=args.span_length,
+            ref_mean=ref_mean,
+            cav_vec=cav_vec,
+            scaler=scaler,
+            pca=pca,
+        )
+        logger.info(f"  Corrected score range: min={scores.min():.4f}, mean={scores.mean():.4f}, max={scores.max():.4f}")
 
     # ------------------------------------------------------------------ #
     # Rank and select top-k
