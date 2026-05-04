@@ -119,7 +119,7 @@ def length_correct_scores(
         mu = scaler.transform(mu)
     if pca is not None:
         mu = pca.transform(mu)
-    mu_proj = float(mu @ cav_vec)
+    mu_proj = (mu @ cav_vec).item()
 
     corrected = np.empty_like(raw_scores)
     missing = []
