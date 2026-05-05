@@ -36,7 +36,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "tcav"))
 
-from src.utils.data_loader import load_sequence_embeddings
+from src.utils.data_loader import load_sequence_embeddings, load_embeddings_pkl, load_spans
+from src.detect import sliding_window_scan
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -92,6 +93,49 @@ def parse_fasta_lengths(fasta_path: str) -> dict:
     if current_id is not None:
         lengths[current_id] = current_len
     return lengths
+
+
+def span_window_size(spans_path: str) -> int:
+    """Return the max residue width across all entries in a spans file."""
+    spans = load_spans(spans_path)
+    widths = []
+    for _, span in spans:
+        if span is None:
+            continue
+        if len(span) == 1:
+            widths.append(1)
+        elif len(span) == 2:
+            start, end = span
+            widths.append(end - start + 1)  # 1-indexed inclusive
+        else:
+            widths.append(len(span))
+    if not widths:
+        raise ValueError(f"No positional spans found in {spans_path} — cannot infer window size.")
+    return max(widths)
+
+
+def sliding_window_scores(
+    aa_embs: np.ndarray,
+    protein_ids: list,
+    protein_lengths: dict,
+    window_size: int,
+    cav_artifacts: dict,
+) -> np.ndarray:
+    """Score each protein by the max window projection onto the CAV direction."""
+    scores = np.empty(len(protein_ids), dtype='float32')
+    missing = []
+    for i, pid in enumerate(protein_ids):
+        seq_len = protein_lengths.get(pid)
+        if seq_len is None:
+            missing.append(pid)
+            seq_len = None  # sliding_window_scan will use full padded length
+        proj, _ = sliding_window_scan(aa_embs[i], cav_artifacts, window_size, seq_len=seq_len)
+        scores[i] = proj.max() if len(proj) > 0 else 0.0
+    if missing:
+        logger.warning(
+            f"{len(missing)} proteins not found in FASTA; padded length used for those entries."
+        )
+    return scores
 
 
 def length_correct_scores(
@@ -156,6 +200,13 @@ def main():
                              'use -1 for all proteins ranked).')
     parser.add_argument('--version', default='v1',
                         help='CAV artifact version suffix (default: v1).')
+    parser.add_argument('--sliding-window', action='store_true',
+                        help='Score each protein by its max sliding-window projection onto the CAV. '
+                             'Requires aa_embeddings in --pkl, --spans to set window size, '
+                             'and --fasta for accurate sequence lengths.')
+    parser.add_argument('--spans', default=None,
+                        help='Spans file used for CAV training; window size is set to the '
+                             'max span width found in this file.')
     parser.add_argument('--length-correct', action='store_true',
                         help='Correct scores for motif dilution in whole-sequence embeddings. '
                              'Requires --span-length, --fasta, and --ref-pkl.')
@@ -175,17 +226,35 @@ def main():
     logger.info(f"  CAV dim: {cav_vec.shape[0]}")
 
     # ------------------------------------------------------------------ #
-    # Load embeddings
+    # Load embeddings and score
     # ------------------------------------------------------------------ #
-    logger.info(f"Loading embeddings from {args.pkl}")
-    embs, protein_ids = load_sequence_embeddings(args.pkl)
-    logger.info(f"  {len(protein_ids):,} proteins, hidden_dim={embs.shape[1]}")
+    if args.sliding_window:
+        if args.spans is None:
+            raise ValueError("--sliding-window requires --spans to infer window size.")
+        window_size = span_window_size(args.spans)
+        logger.info(f"Sliding-window mode: window_size={window_size} (from {args.spans})")
 
-    # ------------------------------------------------------------------ #
-    # Score
-    # ------------------------------------------------------------------ #
-    scores = score_and_rank(embs, cav_vec, scaler, pca)
-    logger.info(f"  Score range: min={scores.min():.4f}, mean={scores.mean():.4f}, max={scores.max():.4f}")
+        emb_dict, protein_ids = load_embeddings_pkl(args.pkl)
+        if 'aa_embeddings' not in emb_dict:
+            raise ValueError(f"{args.pkl} does not contain aa_embeddings. "
+                             "Re-embed with --get_aa_embeddings.")
+        aa_embs = emb_dict['aa_embeddings']
+        logger.info(f"  {len(protein_ids):,} proteins, shape={aa_embs.shape}")
+
+        protein_lengths = parse_fasta_lengths(args.fasta) if args.fasta else {}
+        if not protein_lengths:
+            logger.warning("No --fasta provided; padded sequence length used for all proteins.")
+
+        cav_artifacts = {'concept_cav': cav_vec, 'scaler': scaler, 'pca': pca}
+        scores = sliding_window_scores(aa_embs, protein_ids, protein_lengths,
+                                       window_size, cav_artifacts)
+        logger.info(f"  Score range: min={scores.min():.4f}, mean={scores.mean():.4f}, max={scores.max():.4f}")
+    else:
+        logger.info(f"Loading embeddings from {args.pkl}")
+        embs, protein_ids = load_sequence_embeddings(args.pkl)
+        logger.info(f"  {len(protein_ids):,} proteins, hidden_dim={embs.shape[1]}")
+        scores = score_and_rank(embs, cav_vec, scaler, pca)
+        logger.info(f"  Score range: min={scores.min():.4f}, mean={scores.mean():.4f}, max={scores.max():.4f}")
 
     # ------------------------------------------------------------------ #
     # Length correction (optional)
