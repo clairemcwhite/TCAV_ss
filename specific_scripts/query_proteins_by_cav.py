@@ -239,13 +239,21 @@ def main():
             raise ValueError(f"{args.pkl} does not contain aa_embeddings. "
                              "Re-embed with --get_aa_embeddings.")
         aa_embs = emb_dict['aa_embeddings']
-        logger.info(f"  {len(protein_ids):,} proteins, shape={aa_embs.shape}")
+        pre_projected = emb_dict.get('aa_pca_projected', False)
+        logger.info(f"  {len(protein_ids):,} proteins, shape={aa_embs.shape}"
+                    + (" (pre-projected, skipping scaler/PCA)" if pre_projected else ""))
 
         protein_lengths = parse_fasta_lengths(args.fasta) if args.fasta else {}
         if not protein_lengths:
             logger.warning("No --fasta provided; padded sequence length used for all proteins.")
 
-        cav_artifacts = {'concept_cav': cav_vec, 'scaler': scaler, 'pca': pca}
+        # If aa_embeddings are already in PCA space, pass None for scaler/pca
+        # so sliding_window_scan skips redundant preprocessing.
+        cav_artifacts = {
+            'concept_cav': cav_vec,
+            'scaler': None if pre_projected else scaler,
+            'pca':    None if pre_projected else pca,
+        }
         scores = sliding_window_scores(aa_embs, protein_ids, protein_lengths,
                                        window_size, cav_artifacts)
         logger.info(f"  Score range: min={scores.min():.4f}, mean={scores.mean():.4f}, max={scores.max():.4f}")
