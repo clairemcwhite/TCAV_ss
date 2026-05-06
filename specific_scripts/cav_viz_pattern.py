@@ -311,7 +311,7 @@ def plot_direction_map_interactive(
         search_strings.append(s.lower())
 
     marker = dict(size=8 if dims == 2 else 5, color=point_colors, opacity=0.85,
-                  line=dict(width=0.5, color="white"))
+                  line=dict(width=0.5 if dims == 2 else 0, color="white"))
 
     if dims == 3:
         trace = go.Scatter3d(
