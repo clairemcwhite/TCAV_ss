@@ -38,7 +38,9 @@ logger = logging.getLogger(__name__)
 
 _VERSION_SUFFIX = re.compile(r'_v\d+$')
 
-THRESHOLDS = [round(t, 2) for t in np.arange(0.1, 1.0, 0.1)]
+# Sorted ascending; columns will be emitted in reverse (coarse → fine, left → right)
+THRESHOLDS = sorted([round(t, 2) for t in np.arange(0.1, 1.0, 0.1)]
+                    + [0.75, 0.85, 0.95])
 
 
 # ---------------------------------------------------------------------------
@@ -151,19 +153,28 @@ def cluster_cavs(cav_dirs: dict) -> pd.DataFrame:
 
     rows = {name: {"dendrogram_order": i + 1} for i, name in enumerate(names_ordered)}
 
-    for t in THRESHOLDS:
-        col = f"cut_{int(round(t * 10)):02d}"
-        raw_ids = fcluster(Z, t=t, criterion="distance")  # 1-based, arbitrary order
+    rng = np.random.default_rng(42)
 
-        # Renumber cluster IDs in leaf-traversal order so cluster 1 = leftmost group
-        seen    = {}
-        counter = 1
+    # Build columns finest-first so we can reverse at the end for coarse→fine order
+    cut_cols = {}
+    for t in THRESHOLDS:
+        col     = f"cut_{int(round(t * 100)):03d}"
+        raw_ids = fcluster(Z, t=t, criterion="distance")   # 1-based scipy labels
+
+        # Randomly shuffle the cluster ID labels for visual contrast
+        unique_ids = np.unique(raw_ids)
+        shuffled   = rng.permutation(len(unique_ids)) + 1   # still 1-based
+        id_map     = dict(zip(unique_ids, shuffled))
+
+        col_vals = {}
         for name in names_ordered:
-            orig = raw_ids[names.index(name)]
-            if orig not in seen:
-                seen[orig] = counter
-                counter += 1
-            rows[name][col] = seen[orig]
+            col_vals[name] = int(id_map[raw_ids[names.index(name)]])
+        cut_cols[col] = col_vals
+
+    # Reverse so coarsest threshold (fewest clusters) is leftmost column
+    for col in reversed(list(cut_cols)):
+        for name in names_ordered:
+            rows[name][col] = cut_cols[col][name]
 
     result = pd.DataFrame.from_dict(rows, orient="index")
     result.index.name = "accession"
