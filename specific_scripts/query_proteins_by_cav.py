@@ -200,6 +200,9 @@ def main():
                              'use -1 for all proteins ranked).')
     parser.add_argument('--version', default='v1',
                         help='CAV artifact version suffix (default: v1).')
+    parser.add_argument('--pre-projected', action='store_true',
+                        help='aa_embeddings in --pkl are already in PCA space; '
+                             'skip scaler/PCA during sliding-window scoring.')
     parser.add_argument('--sliding-window', action='store_true',
                         help='Score each protein by its max sliding-window projection onto the CAV. '
                              'Requires aa_embeddings in --pkl, --spans to set window size, '
@@ -239,7 +242,7 @@ def main():
             raise ValueError(f"{args.pkl} does not contain aa_embeddings. "
                              "Re-embed with --get_aa_embeddings.")
         aa_embs = emb_dict['aa_embeddings']
-        pre_projected = emb_dict.get('aa_pca_projected', False)
+        pre_projected = emb_dict.get('aa_pca_projected', False) or args.pre_projected
         logger.info(f"  {len(protein_ids):,} proteins, shape={aa_embs.shape}"
                     + (" (pre-projected, skipping scaler/PCA)" if pre_projected else ""))
 

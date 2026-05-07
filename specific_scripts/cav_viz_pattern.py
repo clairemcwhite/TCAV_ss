@@ -431,6 +431,75 @@ function clearSearch() {{
 
 
 # ---------------------------------------------------------------------------
+# Rotating 3-D GIF
+# ---------------------------------------------------------------------------
+
+def plot_direction_map_gif(
+    cav_pattern: str,
+    out_path: str,
+    reducer: str = "umap",
+    clan_annotations: Optional[str] = None,
+    n_frames: int = 72,       # 72 frames = 5° per step → full 360°
+    fps: int = 20,
+    elev: float = 25,         # fixed elevation angle
+    point_size: int = 20,
+    figsize: Tuple[int, int] = (7, 7),
+):
+    """
+    Render a rotating 3-D scatter of CAV direction vectors and save as an
+    animated GIF.  Axes, panes, grid lines, and tick labels are all hidden
+    so only the coloured point cloud is visible — clean for presentations.
+
+    Requires: matplotlib, Pillow  (pip install Pillow)
+    """
+    try:
+        from matplotlib.animation import FuncAnimation, PillowWriter
+        from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 – registers projection
+    except ImportError as e:
+        raise ImportError(f"Missing dependency: {e}. Run: pip install Pillow") from e
+
+    cav_dirs = load_directions_from_pattern(cav_pattern)
+    coord_df, _ = _embed(cav_dirs, reducer, dims=3)
+
+    # Clan colours (same logic as interactive plot)
+    clans = load_clan_annotations(clan_annotations) if clan_annotations else None
+    NO_CLAN = "no clan"
+    clan_name_per_point = [
+        clans.loc[acc, "clan_name"] if (clans is not None and acc in clans.index) else NO_CLAN
+        for acc in coord_df.index
+    ]
+    color_map = _clan_colors([c for c in clan_name_per_point if c != NO_CLAN])
+    color_map[NO_CLAN] = "#aaaaaa"
+    point_colors = [color_map[c] for c in clan_name_per_point]
+
+    x, y, z = coord_df["D1"].values, coord_df["D2"].values, coord_df["D3"].values
+
+    fig = plt.figure(figsize=figsize, facecolor="white")
+    ax  = fig.add_subplot(111, projection="3d", facecolor="white")
+
+    ax.scatter(x, y, z, c=point_colors, s=point_size, alpha=0.85, linewidths=0)
+
+    # Remove all axes decoration
+    ax.set_axis_off()
+    for pane in (ax.xaxis.pane, ax.yaxis.pane, ax.zaxis.pane):
+        pane.fill = False
+        pane.set_edgecolor("none")
+
+    plt.tight_layout(pad=0)
+
+    def _update(frame):
+        ax.view_init(elev=elev, azim=frame * (360.0 / n_frames))
+        return (fig,)
+
+    logger.info(f"Rendering {n_frames}-frame GIF ({fps} fps) …")
+    anim = FuncAnimation(fig, _update, frames=n_frames, interval=1000 // fps, blit=False)
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    anim.save(out_path, writer=PillowWriter(fps=fps))
+    plt.close()
+    logger.info(f"Saved rotating GIF: {out_path}")
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -459,7 +528,23 @@ def main():
                         help="Path to clan reference file for coloring points by clan.")
     parser.add_argument("--no-labels", action="store_true",
                         help="Suppress concept name labels on static plot.")
+    parser.add_argument("--gif-out",
+                        help="Also save a rotating 3-D GIF to this path (requires --reducer).")
+    parser.add_argument("--gif-frames", type=int, default=72,
+                        help="Number of frames in the GIF (default: 72 = 5° per step).")
+    parser.add_argument("--gif-fps", type=int, default=20,
+                        help="Frames per second of the GIF (default: 20).")
     args = parser.parse_args()
+
+    if args.gif_out:
+        plot_direction_map_gif(
+            cav_pattern=args.cav_pattern,
+            out_path=args.gif_out,
+            reducer=args.reducer,
+            clan_annotations=args.clan_annotations,
+            n_frames=args.gif_frames,
+            fps=args.gif_fps,
+        )
 
     if args.interactive:
         plot_direction_map_interactive(
