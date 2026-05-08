@@ -158,7 +158,8 @@ def _clan_colors(clan_names: list) -> dict:
 # Shared: compute 2-D embedding
 # ---------------------------------------------------------------------------
 
-def _make_reducer(reducer: str, n_components: int = 2, metric: str = "euclidean"):
+def _make_reducer(reducer: str, n_components: int = 2, metric: str = "euclidean",
+                  n_neighbors: int = 30, min_dist: float = 0.1):
     if reducer == "umap":
         try:
             from umap import UMAP
@@ -168,11 +169,12 @@ def _make_reducer(reducer: str, n_components: int = 2, metric: str = "euclidean"
                 "or install with: pip install umap-learn"
             )
         return UMAP(n_components=n_components, random_state=42,
-                    n_neighbors=30, min_dist=0.1, metric=metric)
+                    n_neighbors=n_neighbors, min_dist=min_dist, metric=metric)
     elif reducer == "tsne":
         from sklearn.manifold import TSNE
         return TSNE(n_components=n_components, random_state=42, metric=metric,
-                    perplexity=30, max_iter=1000, init="random", learning_rate="auto")
+                    perplexity=min(n_neighbors, 50), max_iter=1000,
+                    init="random", learning_rate="auto")
     elif reducer == "pca":
         return PCA(n_components=n_components, random_state=42)
     else:
@@ -216,20 +218,33 @@ def _cophenetic_dist_matrix(matrix: np.ndarray) -> np.ndarray:
 
 
 def _embed(cav_dirs: Dict[str, np.ndarray], reducer: str, dims: int = 2,
-           distance_mode: str = "approximate"):
+           distance_mode: str = "approximate",
+           n_neighbors: Optional[int] = None, min_dist: Optional[float] = None):
     """
     distance_mode:
       'approximate'  — UMAP/t-SNE on raw high-D vectors (fast, default)
       'precomputed'  — exact cosine distance matrix passed as precomputed
       'cophenetic'   — cophenetic distances from hierarchical clustering
                        passed as precomputed; best resolves dendrogram structure
+
+    n_neighbors / min_dist override UMAP defaults. Cophenetic mode uses
+    tighter defaults (n_neighbors=10, min_dist=0.0) unless overridden.
     """
     names  = list(cav_dirs.keys())
     matrix = np.vstack([cav_dirs[n] for n in names])
 
+    # Sensible defaults per mode
+    if distance_mode == "cophenetic":
+        nn  = n_neighbors if n_neighbors is not None else 10
+        md  = min_dist    if min_dist    is not None else 0.0
+    else:
+        nn  = n_neighbors if n_neighbors is not None else 30
+        md  = min_dist    if min_dist    is not None else 0.1
+
     if distance_mode == "approximate":
-        logger.info(f"Running {reducer.upper()} ({dims}D) on {len(names)} CAV vectors …")
-        red    = _make_reducer(reducer, n_components=dims)
+        logger.info(f"Running {reducer.upper()} ({dims}D) on {len(names)} CAV vectors "
+                    f"(n_neighbors={nn}, min_dist={md}) …")
+        red    = _make_reducer(reducer, n_components=dims, n_neighbors=nn, min_dist=md)
         coords = red.fit_transform(matrix)
 
     elif distance_mode in ("precomputed", "cophenetic"):
@@ -240,8 +255,10 @@ def _embed(cav_dirs: Dict[str, np.ndarray], reducer: str, dims: int = 2,
         else:
             logger.info(f"Building {len(names)}×{len(names)} cosine distance matrix …")
             dist = _cosine_dist_matrix(matrix)
-        logger.info(f"Running {reducer.upper()} ({dims}D) on {distance_mode} distances …")
-        red    = _make_reducer(reducer, n_components=dims, metric="precomputed")
+        logger.info(f"Running {reducer.upper()} ({dims}D) on {distance_mode} distances "
+                    f"(n_neighbors={nn}, min_dist={md}) …")
+        red    = _make_reducer(reducer, n_components=dims, metric="precomputed",
+                               n_neighbors=nn, min_dist=md)
         coords = red.fit_transform(dist)
 
     else:
@@ -316,6 +333,8 @@ def plot_direction_map_interactive(
     pfam_annotations: Optional[str] = None,
     clan_annotations: Optional[str] = None,
     distance_mode: str = "approximate",
+    n_neighbors: Optional[int] = None,
+    min_dist: Optional[float] = None,
 ):
     """Embed CAV direction vectors in 2D or 3D and save an interactive Plotly HTML."""
     try:
@@ -327,7 +346,8 @@ def plot_direction_map_interactive(
         raise ValueError("--dims must be 2 or 3")
 
     cav_dirs = load_directions_from_pattern(cav_pattern)
-    coord_df, red = _embed(cav_dirs, reducer, dims=dims, distance_mode=distance_mode)
+    coord_df, red = _embed(cav_dirs, reducer, dims=dims, distance_mode=distance_mode,
+                           n_neighbors=n_neighbors, min_dist=min_dist)
     xl, yl = _axis_labels(reducer, red)
     zl = yl.replace("2", "3")  # e.g. "UMAP 3", "PC 3"
 
@@ -505,6 +525,8 @@ def plot_direction_map_gif(
     reducer: str = "umap",
     clan_annotations: Optional[str] = None,
     distance_mode: str = "approximate",
+    n_neighbors: Optional[int] = None,
+    min_dist: Optional[float] = None,
     n_frames: int = 72,       # 72 frames = 5° per step → full 360°
     fps: int = 20,
     elev: float = 25,         # fixed elevation angle
@@ -525,7 +547,8 @@ def plot_direction_map_gif(
         raise ImportError(f"Missing dependency: {e}. Run: pip install Pillow") from e
 
     cav_dirs = load_directions_from_pattern(cav_pattern)
-    coord_df, _ = _embed(cav_dirs, reducer, dims=3, distance_mode=distance_mode)
+    coord_df, _ = _embed(cav_dirs, reducer, dims=3, distance_mode=distance_mode,
+                         n_neighbors=n_neighbors, min_dist=min_dist)
 
     # Clan colours (same logic as interactive plot)
     clans = load_clan_annotations(clan_annotations) if clan_annotations else None
@@ -596,6 +619,12 @@ def main():
                         help="Suppress concept name labels on static plot.")
     parser.add_argument("--gif-out",
                         help="Also save a rotating 3-D GIF to this path (requires --reducer).")
+    parser.add_argument("--n-neighbors", type=int, default=None,
+                        help="UMAP n_neighbors (default: 30 for approximate/precomputed, "
+                             "10 for cophenetic).")
+    parser.add_argument("--min-dist", type=float, default=None,
+                        help="UMAP min_dist (default: 0.1 for approximate/precomputed, "
+                             "0.0 for cophenetic).")
     parser.add_argument("--distance-mode", default="approximate",
                         choices=["approximate", "precomputed", "cophenetic"],
                         help="How to compute distances for embedding. "
@@ -616,6 +645,8 @@ def main():
             reducer=args.reducer,
             clan_annotations=args.clan_annotations,
             distance_mode=args.distance_mode,
+            n_neighbors=args.n_neighbors,
+            min_dist=args.min_dist,
             n_frames=args.gif_frames,
             fps=args.gif_fps,
         )
@@ -629,6 +660,8 @@ def main():
             pfam_annotations=args.pfam_annotations,
             clan_annotations=args.clan_annotations,
             distance_mode=args.distance_mode,
+            n_neighbors=args.n_neighbors,
+            min_dist=args.min_dist,
         )
     else:
         plot_direction_map(
