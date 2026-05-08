@@ -179,25 +179,74 @@ def _make_reducer(reducer: str, n_components: int = 2, metric: str = "euclidean"
         raise ValueError(f"Unknown reducer '{reducer}'. Choose: umap, tsne, pca")
 
 
+def _cosine_dist_matrix(matrix: np.ndarray) -> np.ndarray:
+    """Pairwise cosine distance for unit-normalised rows: 1 - (A @ A.T)."""
+    sim  = matrix @ matrix.T
+    dist = np.clip(1.0 - sim, 0, 2).astype(np.float64)
+    np.fill_diagonal(dist, 0)
+    return dist
+
+
+def _cophenetic_dist_matrix(matrix: np.ndarray) -> np.ndarray:
+    """
+    Build the cophenetic distance matrix from average-linkage hierarchical
+    clustering on cosine distances.  The cophenetic distance between two
+    points is the height (distance threshold) at which they first merge in
+    the dendrogram — it encodes the full tree structure and resolves clusters
+    that look equidistant in raw cosine space.
+    """
+    from scipy.cluster.hierarchy import linkage, cophenet
+    from scipy.spatial.distance import squareform
+
+    logger.info("Building cosine distance matrix for cophenetic embedding …")
+    dist_sq   = _cosine_dist_matrix(matrix)
+    condensed = squareform(dist_sq, checks=False)
+
+    logger.info("Running average-linkage clustering …")
+    Z = linkage(condensed, method="average")
+
+    logger.info("Extracting cophenetic distances …")
+    _, coph_condensed = cophenet(Z, condensed)   # correlation coeff + condensed dists
+    coph_square = squareform(coph_condensed)
+    np.fill_diagonal(coph_square, 0)
+
+    corr = float(_)
+    logger.info(f"Cophenetic correlation with cosine distances: {corr:.4f}")
+    return coph_square
+
+
 def _embed(cav_dirs: Dict[str, np.ndarray], reducer: str, dims: int = 2,
-           precomputed: bool = False):
+           distance_mode: str = "approximate"):
+    """
+    distance_mode:
+      'approximate'  — UMAP/t-SNE on raw high-D vectors (fast, default)
+      'precomputed'  — exact cosine distance matrix passed as precomputed
+      'cophenetic'   — cophenetic distances from hierarchical clustering
+                       passed as precomputed; best resolves dendrogram structure
+    """
     names  = list(cav_dirs.keys())
     matrix = np.vstack([cav_dirs[n] for n in names])
 
-    if precomputed:
-        if reducer == "pca":
-            raise ValueError("--precomputed is not supported with pca.")
-        logger.info(f"Building {len(names)}×{len(names)} cosine distance matrix …")
-        sim  = matrix @ matrix.T
-        dist = np.clip(1.0 - sim, 0, 2).astype(np.float64)
-        np.fill_diagonal(dist, 0)
-        logger.info(f"Running {reducer.upper()} ({dims}D) on precomputed distances …")
-        red = _make_reducer(reducer, n_components=dims, metric="precomputed")
-        coords = red.fit_transform(dist)
-    else:
+    if distance_mode == "approximate":
         logger.info(f"Running {reducer.upper()} ({dims}D) on {len(names)} CAV vectors …")
         red    = _make_reducer(reducer, n_components=dims)
         coords = red.fit_transform(matrix)
+
+    elif distance_mode in ("precomputed", "cophenetic"):
+        if reducer == "pca":
+            raise ValueError(f"--distance-mode {distance_mode} is not supported with pca.")
+        if distance_mode == "cophenetic":
+            dist = _cophenetic_dist_matrix(matrix)
+        else:
+            logger.info(f"Building {len(names)}×{len(names)} cosine distance matrix …")
+            dist = _cosine_dist_matrix(matrix)
+        logger.info(f"Running {reducer.upper()} ({dims}D) on {distance_mode} distances …")
+        red    = _make_reducer(reducer, n_components=dims, metric="precomputed")
+        coords = red.fit_transform(dist)
+
+    else:
+        raise ValueError(f"Unknown distance_mode '{distance_mode}'. "
+                         "Choose: approximate, precomputed, cophenetic")
 
     cols     = ["D1", "D2", "D3"][:dims]
     coord_df = pd.DataFrame(coords, columns=cols, index=names)
@@ -266,7 +315,7 @@ def plot_direction_map_interactive(
     dims: int = 2,
     pfam_annotations: Optional[str] = None,
     clan_annotations: Optional[str] = None,
-    precomputed: bool = False,
+    distance_mode: str = "approximate",
 ):
     """Embed CAV direction vectors in 2D or 3D and save an interactive Plotly HTML."""
     try:
@@ -278,7 +327,7 @@ def plot_direction_map_interactive(
         raise ValueError("--dims must be 2 or 3")
 
     cav_dirs = load_directions_from_pattern(cav_pattern)
-    coord_df, red = _embed(cav_dirs, reducer, dims=dims, precomputed=precomputed)
+    coord_df, red = _embed(cav_dirs, reducer, dims=dims, distance_mode=distance_mode)
     xl, yl = _axis_labels(reducer, red)
     zl = yl.replace("2", "3")  # e.g. "UMAP 3", "PC 3"
 
@@ -455,7 +504,7 @@ def plot_direction_map_gif(
     out_path: str,
     reducer: str = "umap",
     clan_annotations: Optional[str] = None,
-    precomputed: bool = False,
+    distance_mode: str = "approximate",
     n_frames: int = 72,       # 72 frames = 5° per step → full 360°
     fps: int = 20,
     elev: float = 25,         # fixed elevation angle
@@ -476,7 +525,7 @@ def plot_direction_map_gif(
         raise ImportError(f"Missing dependency: {e}. Run: pip install Pillow") from e
 
     cav_dirs = load_directions_from_pattern(cav_pattern)
-    coord_df, _ = _embed(cav_dirs, reducer, dims=3, precomputed=precomputed)
+    coord_df, _ = _embed(cav_dirs, reducer, dims=3, distance_mode=distance_mode)
 
     # Clan colours (same logic as interactive plot)
     clans = load_clan_annotations(clan_annotations) if clan_annotations else None
@@ -547,10 +596,13 @@ def main():
                         help="Suppress concept name labels on static plot.")
     parser.add_argument("--gif-out",
                         help="Also save a rotating 3-D GIF to this path (requires --reducer).")
-    parser.add_argument("--precomputed", action="store_true",
-                        help="Build all-by-all cosine distance matrix and pass as "
-                             "precomputed input to UMAP/t-SNE (not supported with pca). "
-                             "Better resolved clusters at the cost of O(n²) memory/time.")
+    parser.add_argument("--distance-mode", default="approximate",
+                        choices=["approximate", "precomputed", "cophenetic"],
+                        help="How to compute distances for embedding. "
+                             "'approximate': UMAP/t-SNE on raw vectors (fast, default). "
+                             "'precomputed': exact all-by-all cosine distance matrix. "
+                             "'cophenetic': distances from average-linkage dendrogram — "
+                             "best resolves hierarchical cluster structure (not with pca).")
     parser.add_argument("--gif-frames", type=int, default=72,
                         help="Number of frames in the GIF (default: 72 = 5° per step).")
     parser.add_argument("--gif-fps", type=int, default=20,
@@ -563,7 +615,7 @@ def main():
             out_path=args.gif_out,
             reducer=args.reducer,
             clan_annotations=args.clan_annotations,
-            precomputed=args.precomputed,
+            distance_mode=args.distance_mode,
             n_frames=args.gif_frames,
             fps=args.gif_fps,
         )
@@ -576,7 +628,7 @@ def main():
             dims=args.dims,
             pfam_annotations=args.pfam_annotations,
             clan_annotations=args.clan_annotations,
-            precomputed=args.precomputed,
+            distance_mode=args.distance_mode,
         )
     else:
         plot_direction_map(
