@@ -76,7 +76,6 @@ def main():
         X,
         artifacts['concept_cav'],
         artifacts['scaler'],
-        artifacts['pca']
     )
 
     metrics = evaluate_projection_performance(y, scores)
