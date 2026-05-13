@@ -2,145 +2,259 @@
 
 ## Overview
 
-We present an automated approach for identifying and annotating motifs and domains in protein sequences, using pretrained Protein Language Models (PLMs) and Concept Activation Vectors (CAVs), adapted from interpretability research in computer vision. We treat motifs as conceptual entities and represent them through learned CAVs in PLM embedding space by training simple linear classifiers to distinguish motif-containing from non-motif sequences. 
-
+We present an automated approach for identifying and annotating motifs and domains in protein sequences, using pretrained Protein Language Models (PLMs) and Concept Activation Vectors (CAVs), adapted from interpretability research in computer vision. We treat motifs as conceptual entities and represent them through learned CAVs in PLM embedding space by training simple linear classifiers to distinguish motif-containing from non-motif sequences.
 
 ## Key Features
 
 - **Interpretable motif detection** using CAVs in protein language model embedding space
 - **Multiple motif detection** in single sequences with precise localization
 - **Layer-specific analysis** to identify optimal representation layers
-- **Flexible PLM support** (ESM2, ESM-C)
+- **Flexible PLM support** (ESM++, ESM2, ESM-C)
 
 ## Repository Structure
 
 ```
-├── esm2_tcav/              # Core TCAV implementation
-│   ├── src/                # Source code for embedding, training, evaluation
-│   ├── config.yaml         # Model and training configuration
-│   └── models/             # Model registry and configurations
-├── tcav_data/              # Training data (positive/negative examples)
-├── test_data/              # Test sequences for evaluation
-├── test_data_small/        # Small test set for quick validation
-├── Fasta Files/            # Input protein sequences
-├── Outputs/                # Detection results
-├── batch_train_cavs.py     # Train CAVs for multiple motifs
-├── batch_detect_all_motifs.py  # Detect motifs in protein sequences
-└── run_test_detection_onthefly.py  # Evaluate on test dataset
+├── tcav/                    # Core TCAV implementation
+│   └── src/                 # Source modules (attribution, detection, training, evaluation)
+├── scripts/                 # Core pipeline scripts
+│   ├── prepare_embeddings.py        # Pool per-residue embeddings by span
+│   ├── train_cav_from_embeddings.py # Train a CAV from positive/negative matrices
+│   ├── fit_global_pca.py            # Fit PCA on reference population
+│   ├── evaluate_cav.py              # Evaluate CAV performance
+│   ├── scan_sequence.py             # Sliding-window scan of a sequence
+│   └── run_attribution.py           # Attribution analysis
+├── specific_scripts/        # Specialized analysis and visualization scripts
+│   └── query_proteins_by_cav.py    # Rank/scan a FASTA against a trained CAV
+├── examples/                # Example input files (see Examples section)
+├── test_data/               # Full benchmark dataset (60 Pfam motifs)
+└── test_data_small/         # Small subset for quick validation
 ```
 
 ## Installation
 
 ```bash
-# Clone the repository
 git clone <repository-url>
-cd TCAV
-
-## Usage
-
-### 1. Training CAVs
-
-Train Concept Activation Vectors for protein motifs:
-
-```bash
-python batch_train_cavs.py \
-  --data-dir ./tcav_data \
-  --config esm2_tcav/config.yaml \
-  --output-dir ./tcav_outputs_esmplusplus_all \
-  --model ESMplusplus_large \
-  --layers 20 25 30 35 \
-  --batch-size 8
+cd TCAV_ss
+pip install -r tcav/requirements.txt
 ```
 
-**Options:**
-- `--data-dir`: Directory containing positive/negative training examples
-- `--model`: PLM to use (ESMplusplus_large, ESM2_t33_650M_UR50D, ESMC_600M, etc.)
-- `--layers`: Which transformer layers to extract representations from
-- `--no-save-embeddings`: Don't save intermediate embeddings (saves disk space)
+## Pipeline
 
-### 2. Detecting Motifs in Sequences
+The pipeline has a one-time setup step (Step 00) followed by five per-concept steps (Steps 01–05).
 
-Detect motifs in your protein sequences:
+### Step 00 — Build reference negative population (one-time setup)
+
+Embed a large set of random/background proteins to use as negatives for all CAV training. Output lives in `reference_population/`.
 
 ```bash
-python batch_detect_all_motifs.py \
-  --fasta my_protein.fasta \
-  --tcav-dir ./tcav_outputs_esmplusplus_all \
-  --data-dir ./tcav_data \
-  --model-name ESMplusplus_large \
-  --layers 25 \
-  --rank-by-layer 25 \
-  --rank-by score \
-  --topk 100 \
-  --device cuda
+conda activate /groups/clairemcwhite/envs/core_pkgs4
+
+f=/groups/clairemcwhite/ahmad_workspace/esm_c/neg_data/neg_10000.fasta
+
+# Select layer -11 (second-to-last layer), as in the paper
+python /groups/clairemcwhite/mcwlab_utils/hf_embed_new.py \
+    -f $f \
+    -o reference_population/neg_10000.pkl \
+    -ss mean \
+    -s \
+    -l -11 \
+    -m /groups/clairemcwhite/models/ESMplusplus_large \
+    -b 1 \
+    --max_length 2048
 ```
 
-**Options:**
-- `--fasta`: Input FASTA file with protein sequences
-- `--tcav-dir`: Directory containing trained CAVs
-- `--motifs`: Specific motifs to detect (default: all available)
-- `--layers`: Layers to use for detection
-- `--rank-by-layer`: Which layer to use for ranking results
-- `--rank-by`: Ranking method (`score` or `position`)
-- `--topk`: Number of top predictions to return
-- `--window-scores-dir`: Directory to save detailed window scores
+### Step 01 — Embed input FASTA
 
-**Example: Detect specific motifs**
-```bash
-python batch_detect_all_motifs.py \
-  --fasta Q9NHV9.fasta \
-  --motifs PF00017 PF00018 PF00130 PF00621 \
-  --model-name ESMplusplus_large \
-  --tcav-dir ./tcav_outputs_esmplusplus_all \
-  --layers 25 \
-  --rank-by-layer 25 \
-  --rank-by score \
-  --device cuda
-```
-
-### 3. Evaluating on Test Dataset
-
-Evaluate detection performance on benchmark data:
+Embed the protein(s) that define your concept. Both per-residue (AA) and sequence-level embeddings are needed for span pooling in Step 02.
 
 ```bash
-python run_test_detection_onthefly.py \
-  --test-data-dir ./test_data_small \
-  --tcav-dir ./tcav_outputs_esmplusplus_all \
-  --data-dir ./tcav_data \
-  --model-name ESMplusplus_large \
-  --layers 25 \
-  --rank-by score \
-  --device cuda
+python /groups/clairemcwhite/claire_workspace/github/mcwlab_utils/hf_embed_new.py \
+    -f $INPUT_FASTA \
+    -o ${INPUT_FASTA}.pkl \
+    --get_aa_embeddings \
+    --get_sequence_embedding \
+    --strat mean \
+    -l -11 \
+    -m /groups/clairemcwhite/models/ESMplusplus_large \
+    -b 1 \
+    --max_length 2048
 ```
 
-## Data Format
+### Step 02 — Pool embeddings by span → positive matrix
 
-### Training Data (`tcav_data/`)
-Each motif requires:
-- `{motif_id}_pos.fasta`: Positive examples containing the motif
-- `{motif_id}_pos.jsonl`: Annotations with motif locations
-- `{motif_id}_neg.fasta`: Negative examples without the motif
-- `{motif_id}_neg.jsonl`: Negative example metadata
+Extract the region(s) defined in your span file and pool them into a positive embedding matrix.
 
-### Test Data
-- `{protein_id}.fasta`: Test protein sequences
-- `{protein_id}.jsonl`: Ground truth motif annotations
+```bash
+python $tcav_dir/scripts/prepare_embeddings.py \
+    --pkl   ${INPUT_FASTA}.pkl \
+    --info  ${INPUT_FASTA}.pkl.seqnames \
+    --spans $SPAN_FILE \
+    --out   ${SPAN_FILE%.spans}_pos.npy
+```
+
+### Step 03 — Train CAV
+
+Train a linear classifier (CAV) separating the positive span embeddings from the reference negative population.
+
+```bash
+python $tcav_dir/scripts/train_cav_from_embeddings.py \
+    --pos     ${SPAN_FILE%.spans}_pos.npy \
+    --neg     $ref_neg \
+    --out     $concept_dir \
+    --cv-folds 0 \
+    --pca-pkl  $ref_pca
+```
+
+### Step 04 — Embed search FASTA
+
+Embed the sequences you want to rank. Only sequence-level embeddings are needed here. This step is skipped automatically if the `.pkl` already exists.
+
+```bash
+if [ -f "$search_pkl" ]; then
+    echo "Skipping embedding: $search_pkl already exists"
+else
+    python /groups/clairemcwhite/claire_workspace/github/mcwlab_utils/hf_embed_new.py \
+        -f $SEARCH_FASTA \
+        -o $search_pkl \
+        --get_sequence_embedding \
+        --strat mean \
+        -l -11 \
+        -m /groups/clairemcwhite/models/ESMplusplus_large \
+        -b 1 \
+        --max_length 2048
+fi
+```
+
+> **On-the-fly embedding:** For small search FASTAs you can skip pre-computing the pkl and pass `--fasta` directly to the query script (Step 05); it will embed on the fly.
+
+### Step 05 — Query search FASTA against CAV
+
+Score and rank every sequence (or every sliding window) in the search set against the trained CAV.
+
+```bash
+python $tcav_dir/specific_scripts/query_proteins_by_cav.py \
+    --cav   $concept_dir \
+    --pkl   $search_pkl \
+    --out   $out_tsv \
+    --k     -1 \
+    --sliding-window \
+    --spans $SPAN_FILE \
+    --fasta $SEARCH_FASTA
+```
+
+`--k -1` returns all results; `--sliding-window` enables per-window scoring; `--spans` and `--fasta` are used to annotate known positive regions in the output.
+
+### Full example wrapper
+
+A complete wrapper that sets variables and runs Steps 01–05 end-to-end:
+
+```bash
+# -------------
+# Inputs — replace these placeholders before running
+# -------------
+SPAN_FILE=fastas/pairs/myc_mad/MYC_HUMAN.fasta.spans
+INPUT_FASTA=fastas/pairs/myc_mad/MYC_HUMAN.fasta
+SEARCH_FASTA=/xdisk/clairemcwhite/clairemcwhite/uniprot_human_all.fasta
+
+# -------------
+# Paths
+# -------------
+source ~/.bashrc
+conda activate /groups/clairemcwhite/envs/core_pkgs4
+export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+
+tcav_dir=/groups/clairemcwhite/claire_workspace/github/TCAV_ss
+ref_neg=reference_population/neg_10000.pkl
+ref_pca=reference_population/global_pca_v1.pkl
+
+concept_dir=${SPAN_FILE%.spans}_concept
+search_pkl=${SEARCH_FASTA}.pkl
+out_tsv=${SPAN_FILE%.spans}_query_results.tsv
+
+# Step 01
+if [ -f "${INPUT_FASTA}.pkl" ]; then
+    echo "Skipping embedding: ${INPUT_FASTA}.pkl already exists"
+else
+    python /groups/clairemcwhite/claire_workspace/github/mcwlab_utils/hf_embed_new.py \
+        -f $INPUT_FASTA -o ${INPUT_FASTA}.pkl \
+        --get_aa_embeddings --get_sequence_embedding \
+        --strat mean -l -11 \
+        -m /groups/clairemcwhite/models/ESMplusplus_large \
+        -b 1 --max_length 2048
+fi
+
+# Step 02
+python $tcav_dir/scripts/prepare_embeddings.py \
+    --pkl ${INPUT_FASTA}.pkl --info ${INPUT_FASTA}.pkl.seqnames \
+    --spans $SPAN_FILE --out ${SPAN_FILE%.spans}_pos.npy
+
+# Step 03
+python $tcav_dir/scripts/train_cav_from_embeddings.py \
+    --pos ${SPAN_FILE%.spans}_pos.npy --neg $ref_neg \
+    --out $concept_dir --cv-folds 0 --pca-pkl $ref_pca
+
+# Step 04
+if [ -f "$search_pkl" ]; then
+    echo "Skipping embedding: $search_pkl already exists"
+else
+    python /groups/clairemcwhite/claire_workspace/github/mcwlab_utils/hf_embed_new.py \
+        -f $SEARCH_FASTA -o $search_pkl \
+        --get_sequence_embedding --strat mean -l -11 \
+        -m /groups/clairemcwhite/models/ESMplusplus_large \
+        -b 1 --max_length 2048
+fi
+
+# Step 05
+python $tcav_dir/specific_scripts/query_proteins_by_cav.py \
+    --cav $concept_dir --pkl $search_pkl --out $out_tsv \
+    --k -1 --sliding-window --spans $SPAN_FILE --fasta $SEARCH_FASTA
+```
+
+## Examples
+
+The `examples/` directory contains input files for a receptor-like kinase domain concept:
+
+| File | Description |
+|------|-------------|
+| `examples/RLK5_ARATH.fasta` | Input protein sequence (RLK5, *A. thaliana*) |
+| `examples/RLK5_ARATH.fasta.span` | Span defining the kinase domain (residues 404–591) |
+
+Run the pipeline with these files by setting:
+```bash
+SPAN_FILE=examples/RLK5_ARATH.fasta.span
+INPUT_FASTA=examples/RLK5_ARATH.fasta
+```
+
+## Input Formats
+
+### FASTA
+Standard FASTA format. The accession in the header must match the accession used in the span file.
+
+```
+>sp|P47735|RLK5_ARATH Receptor-like protein kinase 5 ...
+MLYCLILLLC...
+```
+
+### Span file (`.span`)
+Tab-separated, one span per line:
+
+```
+<accession>	<start>	<end>
+```
+
+The accession must match the FASTA header (full `sp|...|...` form or just the bare ID, depending on your embed script). Start and end are 1-based, inclusive residue positions.
+
+```
+sp|P47735|RLK5_ARATH	404	591
+```
 
 ## Models Supported
 
-- **ESM++** (ESMplusplus_large) - Recommended for best performance
-- **ESM2** (ESM2_t33_650M_UR50D, ESM2_t36_3B_UR50D)
-- **ESM-C** (ESMC_300M, ESMC_600M)
+- **ESM++** (`ESMplusplus_large`) — recommended for best performance
+- **ESM2** (`ESM2_t33_650M_UR50D`, `ESM2_t36_3B_UR50D`)
+- **ESM-C** (`ESMC_300M`, `ESMC_600M`)
 
-Configure models in `esm2_tcav/models/model_registry.yaml`
-
-## Output
-
-Detection results include:
-- Top-k motif predictions per sequence
-- Confidence scores based on CAV inner products
-- Precise sequence position ranges
-- Layer-wise scores for analysis
+Layer `-11` (second-to-last transformer layer) is used throughout, following the arxiv paper.
 
 ## Citation
 
@@ -148,4 +262,3 @@ If you use this code, please cite our paper:
 ```
 [Citation information to be added]
 ```
-
