@@ -51,7 +51,6 @@ def sliding_window_scan(
             pooled,
             cav_artifacts['concept_cav'],
             cav_artifacts['scaler'],
-            cav_artifacts['pca']
         )[0]
         projection_scores.append(score)
         window_spans.append((start, end))
@@ -84,7 +83,6 @@ def per_position_scan(
         tokens,
         cav_artifacts['concept_cav'],
         cav_artifacts['scaler'],
-        cav_artifacts['pca']
     )
     return scores
 
@@ -107,7 +105,6 @@ def sequence_scan(
         sequence_embeddings,
         cav_artifacts['concept_cav'],
         cav_artifacts['scaler'],
-        cav_artifacts['pca']
     )
 
 

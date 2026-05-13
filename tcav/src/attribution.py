@@ -30,7 +30,7 @@ def compute_token_attributions(
         aa_embeddings: Token embeddings for one sample, shape (max_seq_len, hidden_dim).
                        If padded, pass seq_len to restrict scoring to real tokens.
         cav_artifacts: Dict from evaluate.load_cav_artifacts(), containing
-                       'concept_cav', 'scaler', and optionally 'pca'.
+                       'concept_cav' and 'scaler'.
         seq_len:       Number of real (non-padded) tokens. Defaults to full array.
 
     Returns:
@@ -44,7 +44,6 @@ def compute_token_attributions(
     preprocessed = preprocess_embeddings(
         tokens,
         cav_artifacts['scaler'],
-        cav_artifacts.get('pca')
     )
 
     scores = preprocessed @ cav_artifacts['concept_cav']

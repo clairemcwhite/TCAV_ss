@@ -1,7 +1,7 @@
 """Utility modules for TCAV pipeline"""
 
 from .data_loader import load_embeddings_pkl, load_sequence_embeddings, load_spans, build_embedding_matrix
-from .preprocessing import standardize_features, apply_pca, create_scaler_and_pca
+from .preprocessing import create_scaler_and_pca, preprocess_embeddings
 from .visualization import (
     plot_roc_pr_curves,
     plot_random_cav_comparison,
@@ -14,9 +14,8 @@ __all__ = [
     'load_sequence_embeddings',
     'load_spans',
     'build_embedding_matrix',
-    'standardize_features',
-    'apply_pca',
     'create_scaler_and_pca',
+    'preprocess_embeddings',
     'plot_roc_pr_curves',
     'plot_random_cav_comparison',
     'plot_localization_heatmap',

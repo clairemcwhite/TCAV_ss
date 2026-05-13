@@ -39,7 +39,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "tcav"))
 from src.train_cav import train_cav
 from src.utils.data_loader import load_sequence_embeddings
 
-import joblib
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -71,10 +70,6 @@ def main():
                         help='Output directory for CAV artifacts')
     parser.add_argument('--holdout', type=float, default=0.0,
                         help='Fraction to hold out for evaluation (default: 0)')
-    parser.add_argument('--pca-dim', type=int, default=128,
-                        help='PCA dimensionality (default: 128)')
-    parser.add_argument('--no-pca', action='store_true',
-                        help='Disable PCA preprocessing')
     parser.add_argument('--C', type=float, default=1.0,
                         help='Logistic regression regularization strength (default: 1.0)')
     parser.add_argument('--cv-folds', type=int, default=5,
@@ -83,32 +78,18 @@ def main():
                         help='Random seed (default: 42)')
     parser.add_argument('--version', default='v1',
                         help='Artifact version string (default: v1)')
-    parser.add_argument('--pca-pkl', default=None,
-                        help='Path to global scaler+PCA pkl (produced by '
-                             'build_reference_population.py). When provided, '
-                             '--pca-dim and --no-pca are ignored and all CAVs '
-                             'are projected into the same coordinate system.')
     args = parser.parse_args()
 
     pos = load_vectors(args.pos)
     neg = load_vectors(args.neg)
 
-    # Write pos.npy / neg.npy to a temp location under --out so train_cav() can find them
+    # Write pos.npy / neg.npy under --out so train_cav() can find them
     out_path = Path(args.out)
     out_path.mkdir(parents=True, exist_ok=True)
     np.save(out_path / 'pos.npy', pos)
     np.save(out_path / 'neg.npy', neg)
 
-    scaler, pca = None, None
-    if args.pca_pkl:
-        bundle = joblib.load(args.pca_pkl)
-        scaler = bundle['scaler']
-        pca    = bundle['pca']
-        logger.info(f"Using global scaler/PCA from {args.pca_pkl}")
-
     config = {
-        'use_pca': not args.no_pca,
-        'pca_dim': args.pca_dim,
         'regularization_C': args.C,
         'cv_folds': args.cv_folds,
         'random_seed': args.seed,
@@ -120,8 +101,6 @@ def main():
         config=config,
         artifact_version=args.version,
         holdout_fraction=args.holdout,
-        scaler=scaler,
-        pca=pca,
     )
 
 

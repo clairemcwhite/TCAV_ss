@@ -7,7 +7,7 @@ import json
 import joblib
 import logging
 from pathlib import Path
-from typing import Dict, Tuple, Optional, Any
+from typing import Dict, Tuple, Any
 from datetime import datetime
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_val_score, StratifiedKFold, train_test_split
@@ -148,36 +148,16 @@ def save_cav_artifacts(
     output_dir: str,
     concept_cav: np.ndarray,
     scaler: Any,
-    pca: Optional[Any],
     concept_metrics: Dict,
     config: Dict,
     artifact_version: str = "v1"
 ) -> None:
-    """
-    Save all CAV artifacts with versioning and manifest.
-
-    Args:
-        output_dir: Output directory
-        concept_cav: Concept CAV vector
-        scaler: Fitted scaler
-        pca: Fitted PCA (or None)
-        concept_metrics: Concept CAV metrics
-        config: Training configuration
-        artifact_version: Version string
-    """
+    """Save CAV artifacts with versioning and manifest."""
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    concept_file = output_path / f"concept_{artifact_version}.npy"
-    np.save(concept_file, concept_cav)
-
-    scaler_file = output_path / f"scaler_{artifact_version}.pkl"
-    joblib.dump(scaler, scaler_file)
-
-    pca_file = None
-    if pca is not None:
-        pca_file = output_path / f"pca_{artifact_version}.pkl"
-        joblib.dump(pca, pca_file)
+    np.save(output_path / f"concept_{artifact_version}.npy", concept_cav)
+    joblib.dump(scaler, output_path / f"scaler_{artifact_version}.pkl")
 
     report = {
         'artifact_version': artifact_version,
@@ -190,15 +170,10 @@ def save_cav_artifacts(
         }
     }
 
-    if pca is not None:
-        report['artifact_hashes']['pca'] = compute_artifact_hash(pca.components_)
-
-    report_file = output_path / f"report_{artifact_version}.json"
-    with open(report_file, 'w') as f:
+    with open(output_path / f"report_{artifact_version}.json", 'w') as f:
         json.dump(report, f, indent=2)
 
     logger.info(f"Saved CAV artifacts to {output_path}")
-
     create_manifest(output_path, artifact_version)
 
 
@@ -206,14 +181,13 @@ def create_manifest(output_dir: Path, version: str) -> None:
     artifact_files = {
         'concept_cav': f"concept_{version}.npy",
         'scaler': f"scaler_{version}.pkl",
-        'pca': f"pca_{version}.pkl",
-        'report': f"report_{version}.json"
+        'report': f"report_{version}.json",
     }
 
     manifest = {
         'version': version,
         'created': datetime.now().isoformat(),
-        'files': {}
+        'files': {},
     }
 
     for key, filename in artifact_files.items():
@@ -222,11 +196,10 @@ def create_manifest(output_dir: Path, version: str) -> None:
             manifest['files'][key] = {
                 'filename': filename,
                 'size_bytes': filepath.stat().st_size,
-                'exists': True
+                'exists': True,
             }
 
-    manifest_file = output_dir / f"manifest_{version}.json"
-    with open(manifest_file, 'w') as f:
+    with open(output_dir / f"manifest_{version}.json", 'w') as f:
         json.dump(manifest, f, indent=2)
 
 
@@ -237,7 +210,6 @@ def train_cav(
     artifact_version: str = "v1",
     holdout_fraction: float = 0.0,
     scaler=None,
-    pca=None,
 ) -> None:
     """
     Complete CAV training pipeline.
@@ -249,13 +221,9 @@ def train_cav(
         artifact_version: Version string
         holdout_fraction: Fraction of data to hold out for evaluation (0 = no holdout)
         scaler: Optional pre-fit StandardScaler. If provided, skips fitting a new one.
-                Use this to share a global scaler across all CAVs in a library so that
-                CAV directions live in the same coordinate system and are directly comparable.
-        pca: Optional pre-fit PCA. If provided alongside scaler, skips fitting a new PCA.
     """
     X, y = load_embeddings(embed_dir)
 
-    holdout_metrics = None
     if holdout_fraction > 0.0:
         X_train, X_holdout, y_train, y_holdout = train_test_split(
             X, y,
@@ -263,29 +231,18 @@ def train_cav(
             stratify=y,
             random_state=config.get('random_seed', 42)
         )
-        logger.info(
-            f"Holdout split: {len(X_train)} train, {len(X_holdout)} holdout"
-        )
+        logger.info(f"Holdout split: {len(X_train)} train, {len(X_holdout)} holdout")
     else:
         X_train, y_train = X, y
         X_holdout, y_holdout = None, None
 
     if scaler is None:
-        scaler, pca, preprocess_meta = create_scaler_and_pca(
-            X_train,
-            use_pca=config.get('use_pca', True),
-            pca_dim=config.get('pca_dim', 128)
-        )
+        scaler, preprocess_meta = create_scaler_and_pca(X_train)
     else:
-        preprocess_meta = {
-            'global_pca': True,
-            'pca_dim': pca.n_components_ if pca is not None else None,
-        }
-        logger.info("Using pre-fit global scaler/PCA")
+        preprocess_meta = {'global_scaler': True}
+        logger.info("Using pre-fit global scaler")
 
     X_scaled = scaler.transform(X_train)
-    if pca is not None:
-        X_scaled = pca.transform(X_scaled)
 
     concept_model, concept_metrics = train_concept_cav(
         X_scaled,
@@ -298,22 +255,17 @@ def train_cav(
 
     if X_holdout is not None:
         X_holdout_scaled = scaler.transform(X_holdout)
-        if pca is not None:
-            X_holdout_scaled = pca.transform(X_holdout_scaled)
         cav_vec = extract_cav_vector(concept_model)
         holdout_scores = X_holdout_scaled @ cav_vec
         holdout_auroc = roc_auc_score(y_holdout, holdout_scores)
         holdout_auprc = average_precision_score(y_holdout, holdout_scores)
-        holdout_metrics = {
+        concept_metrics.update({
             'holdout_auroc': float(holdout_auroc),
             'holdout_auprc': float(holdout_auprc),
             'n_holdout': len(X_holdout),
-            'holdout_fraction': holdout_fraction
-        }
-        concept_metrics.update(holdout_metrics)
-        logger.info(
-            f"Holdout AUROC = {holdout_auroc:.3f}, AUPRC = {holdout_auprc:.3f}"
-        )
+            'holdout_fraction': holdout_fraction,
+        })
+        logger.info(f"Holdout AUROC = {holdout_auroc:.3f}, AUPRC = {holdout_auprc:.3f}")
 
     concept_cav = extract_cav_vector(concept_model)
     concept_metrics.update(preprocess_meta)
@@ -322,8 +274,7 @@ def train_cav(
         output_dir=output_dir,
         concept_cav=concept_cav,
         scaler=scaler,
-        pca=pca,
         concept_metrics=concept_metrics,
         config=config,
-        artifact_version=artifact_version
+        artifact_version=artifact_version,
     )

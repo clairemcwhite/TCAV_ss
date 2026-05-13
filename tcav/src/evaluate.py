@@ -6,7 +6,7 @@ import numpy as np
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Tuple, Optional, Any
+from typing import Dict, Tuple, Any
 from sklearn.metrics import (
     roc_curve, precision_recall_curve, auc,
     roc_auc_score, average_precision_score
@@ -27,16 +27,7 @@ def load_cav_artifacts(
     cav_dir: str,
     version: str = "v1"
 ) -> Dict:
-    """
-    Load all CAV artifacts.
-
-    Args:
-        cav_dir: CAV directory
-        version: Artifact version
-
-    Returns:
-        Dictionary with all artifacts
-    """
+    """Load all CAV artifacts from a directory."""
     import joblib
 
     cav_path = Path(cav_dir)
@@ -49,11 +40,7 @@ def load_cav_artifacts(
 
     scaler = joblib.load(cav_path / f"scaler_{version}.pkl")
 
-    pca_file = cav_path / f"pca_{version}.pkl"
-    pca = joblib.load(pca_file) if pca_file.exists() else None
-
-    report_file = cav_path / f"report_{version}.json"
-    with open(report_file, 'r') as f:
+    with open(cav_path / f"report_{version}.json", 'r') as f:
         report = json.load(f)
 
     logger.info(f"Loaded CAV artifacts: concept + {len(random_cavs)} random CAVs")
@@ -62,8 +49,7 @@ def load_cav_artifacts(
         'concept_cav': concept_cav,
         'random_cavs': random_cavs,
         'scaler': scaler,
-        'pca': pca,
-        'report': report
+        'report': report,
     }
 
 
@@ -71,21 +57,9 @@ def compute_projections(
     embeddings: np.ndarray,
     cav: np.ndarray,
     scaler: Any,
-    pca: Optional[Any] = None
 ) -> np.ndarray:
-    """
-    Compute CAV projections for embeddings.
-
-    Args:
-        embeddings: Raw embeddings (n_samples, hidden_dim)
-        cav: CAV vector
-        scaler: Fitted scaler
-        pca: Optional fitted PCA
-
-    Returns:
-        Projection scores (n_samples,)
-    """
-    X_preprocessed = preprocess_embeddings(embeddings, scaler, pca)
+    """Compute CAV projections for embeddings."""
+    X_preprocessed = preprocess_embeddings(embeddings, scaler)
     return X_preprocessed @ cav
 
 
@@ -259,7 +233,6 @@ def evaluate_cav(
         X,
         artifacts['concept_cav'],
         artifacts['scaler'],
-        artifacts['pca']
     )
 
     metrics = evaluate_projection_performance(y, concept_projections)
@@ -271,7 +244,7 @@ def evaluate_cav(
     metrics['threshold_metadata'] = threshold_meta
 
     random_aurocs = [
-        roc_auc_score(y, compute_projections(X, rc, artifacts['scaler'], artifacts['pca']))
+        roc_auc_score(y, compute_projections(X, rc, artifacts['scaler']))
         for rc in artifacts['random_cavs']
     ]
 
