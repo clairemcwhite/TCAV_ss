@@ -85,7 +85,7 @@ def process(data_dir: Path, groups: list[str], max_n: int | None, seed: int) -> 
                     split_ids = rng.sample(split_ids, max_n)
                     logger.info(f"  Subsampled {group}/{polarity}/{split} to {max_n}")
 
-                n_suffix = f"_{max_n}" if max_n is not None else ""
+                n_suffix = f"_max{max_n}" if max_n is not None else ""
                 out_path = data_dir / f"{group}_{polarity}_{split}{n_suffix}.span"
                 write_span(split_ids, out_path)
 
