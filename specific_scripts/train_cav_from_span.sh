@@ -7,8 +7,10 @@ set -euo pipefail
 
 SPAN_FILE=$1
 FEW_EXEMPLARS=0
+ONLY_DOWNLOAD=0
 for arg in "$@"; do
     [ "$arg" = "--few-exemplars" ] && FEW_EXEMPLARS=1
+    [ "$arg" = "--only-download" ] && ONLY_DOWNLOAD=1
 done
 CV_FOLDS=$([ "$FEW_EXEMPLARS" -eq 1 ] && echo 0 || echo 5)
 
@@ -39,6 +41,8 @@ else
     python $tcav_dir/specific_scripts/retrieve_fasta.py \
         $SPAN_FILE $FASTA_FILE
 fi
+
+[ "$ONLY_DOWNLOAD" -eq 1 ] && { echo "Done (--only-download)."; exit 0; }
 
 # -------------
 ### Step 2: Embed FASTA
