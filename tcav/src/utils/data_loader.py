@@ -291,19 +291,39 @@ def build_embedding_matrix(
     aa_emb = embeddings.get('aa_embeddings')
     seq_emb = embeddings.get('sequence_embeddings')
 
+    # Exact index
     id_to_idx = {sid: i for i, sid in enumerate(sample_ids)}
+    # Secondary index: each '|'-delimited part → row index (skips db prefixes like sp/tr)
+    _SKIP = {'sp', 'tr', 'sw', 'ref'}
+    part_to_idx = {}
+    for i, sid in enumerate(sample_ids):
+        for part in sid.split('|'):
+            if part and part not in _SKIP:
+                part_to_idx.setdefault(part, i)
+
+    def _lookup(acc):
+        if acc in id_to_idx:
+            return id_to_idx[acc]
+        # Try parts of acc itself (e.g. "sp|A2Y9C2|LAC20" → try "A2Y9C2")
+        for part in acc.split('|'):
+            if part in id_to_idx:
+                return id_to_idx[part]
+            if part in part_to_idx:
+                return part_to_idx[part]
+        # Try acc as a part token of any sample_id
+        return part_to_idx.get(acc)
+
     vectors = []
     skipped = 0
 
     entries = spans if spans is not None else [(sid, None) for sid in sample_ids]
 
     for accession, span in entries:
-        if accession not in id_to_idx:
+        idx = _lookup(accession)
+        if idx is None:
             logger.warning(f"'{accession}' in spans not found in pkl — skipping")
             skipped += 1
             continue
-
-        idx = id_to_idx[accession]
         row_aa = aa_emb[idx] if aa_emb is not None else None
         row_seq = seq_emb[idx] if seq_emb is not None else None
 
