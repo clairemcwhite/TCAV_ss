@@ -3,8 +3,6 @@
 # Usage: bash train_cav_from_span.sh <SPAN_FILE>
 # Example: bash train_cav_from_span.sh go_dataset_part6/GO_0035639/random_positive_train_max1000.span
 
-set -euo pipefail
-
 SPAN_FILE=$1
 FEW_EXEMPLARS=0
 ONLY_DOWNLOAD=0
@@ -18,6 +16,7 @@ CV_FOLDS=$([ "$FEW_EXEMPLARS" -eq 1 ] && echo 0 || echo 5)
 ### Paths
 # -------------
 source ~/.bashrc
+set -euo pipefail
 conda activate /groups/clairemcwhite/envs/core_pkgs4
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
