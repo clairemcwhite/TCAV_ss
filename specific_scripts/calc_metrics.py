@@ -2,6 +2,8 @@
 
 import argparse
 
+import math
+
 import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score, average_precision_score
@@ -151,6 +153,123 @@ def protein_centric_metrics(scores, truth_sets, threshold):
         f1 = 2 * mean_precision * mean_recall / (mean_precision + mean_recall)
 
     return mean_precision, mean_recall, f1
+
+
+def parse_obo(obo_file):
+    """Return {term_id: {"parents": [...], "namespace": str}} for non-obsolete terms."""
+    terms = {}
+    current_id = current_namespace = None
+    current_parents = []
+    current_is_obsolete = in_term = False
+
+    with open(obo_file) as f:
+        for line in f:
+            line = line.strip()
+            if line == "[Term]":
+                if in_term and current_id and not current_is_obsolete:
+                    terms[current_id] = {"parents": current_parents, "namespace": current_namespace}
+                in_term = True
+                current_id = current_namespace = None
+                current_parents = []
+                current_is_obsolete = False
+            elif line == "[Typedef]":
+                if in_term and current_id and not current_is_obsolete:
+                    terms[current_id] = {"parents": current_parents, "namespace": current_namespace}
+                in_term = False
+            elif in_term:
+                if line.startswith("id: "):
+                    current_id = line[4:].strip()
+                elif line.startswith("namespace: "):
+                    current_namespace = line[11:].strip()
+                elif line.startswith("is_a: "):
+                    current_parents.append(line[6:].split()[0])
+                elif line.startswith("relationship: part_of "):
+                    current_parents.append(line[22:].split()[0])
+                elif line.startswith("is_obsolete: true"):
+                    current_is_obsolete = True
+
+    if in_term and current_id and not current_is_obsolete:
+        terms[current_id] = {"parents": current_parents, "namespace": current_namespace}
+
+    return terms
+
+
+def propagate_annotations(annots, obo_terms):
+    """Walk each term up to the root, returning the full propagated set."""
+    result = set(annots)
+    queue = list(annots)
+    while queue:
+        term = queue.pop()
+        for parent in obo_terms.get(term, {}).get("parents", []):
+            if parent not in result:
+                result.add(parent)
+                queue.append(parent)
+    return result
+
+
+def compute_ic_from_obo(truth_sets, obo_terms):
+    """IC computed from ontology-propagated truth annotations."""
+    n = len(truth_sets)
+    counts = {}
+    for annots in truth_sets.values():
+        for t in propagate_annotations(annots, obo_terms):
+            counts[t] = counts.get(t, 0) + 1
+
+    ic = {t: -math.log2(c / n) for t, c in counts.items() if c > 0}
+    max_ic = max(ic.values(), default=1.0)
+    norm_ic = {t: v / max_ic for t, v in ic.items()}
+    return ic, norm_ic
+
+
+
+def protein_centric_metrics_ic(scores, truth_sets, threshold, ic, norm_ic):
+    """IC-weighted protein-centric metrics: WFmax component and Smin component."""
+    total = p_total = 0
+    r = wr = p = wp = 0.0
+    ru_sum = mi_sum = tp_ic_sum = 0.0
+
+    for entry, row in scores.iterrows():
+        true_terms = truth_sets.get(entry, set())
+        if not true_terms:
+            continue
+
+        pred_terms = set(row.index[row.values >= threshold])
+        tp = true_terms & pred_terms
+        fp = pred_terms - true_terms
+        fn = true_terms - pred_terms
+
+        tpic = sum(norm_ic.get(t, 0.0) for t in tp)
+        fpic = sum(norm_ic.get(t, 0.0) for t in fp)
+        fnic = sum(norm_ic.get(t, 0.0) for t in fn)
+
+        tp_ic_sum += sum(ic.get(t, 0.0) for t in tp)
+        mi_sum    += sum(ic.get(t, 0.0) for t in fp)
+        ru_sum    += sum(ic.get(t, 0.0) for t in fn)
+
+        tpn, fpn, fnn = len(tp), len(fp), len(fn)
+        total += 1
+        r  += tpn / (tpn + fnn) if (tpn + fnn) else 0.0
+        wr += tpic / (tpic + fnic) if (tpic + fnic) > 0 else 0.0
+
+        if pred_terms:
+            p_total += 1
+            p  += tpn / (tpn + fpn) if (tpn + fpn) else 0.0
+            wp += tpic / (tpic + fpic) if (tpic + fpic) > 0 else 0.0
+
+    if total == 0:
+        return 0.0, float("inf"), 0.0
+
+    r  /= total
+    wr /= total
+    if p_total > 0:
+        p  /= p_total
+        wp /= p_total
+
+    wf = 2 * wp * wr / (wp + wr) if (wp + wr) > 0 else 0.0
+    s  = math.sqrt((ru_sum / total) ** 2 + (mi_sum / total) ** 2)
+    avg_ic_val = (tp_ic_sum + mi_sum) / total
+
+    return wf, s, avg_ic_val
 
 
 def make_label_matrix(scores, truth_sets):
@@ -320,6 +439,21 @@ def main():
         action="store_true",
         help="Do not drop the ontology root term.",
     )
+    parser.add_argument(
+        "--go-obo",
+        required=True,
+        help="Path to go.obo. IC for --smin/--wfmax is computed from ontology-propagated truth annotations.",
+    )
+    parser.add_argument(
+        "--smin",
+        action="store_true",
+        help="Compute Smin (semantic distance: sqrt(RU^2 + MI^2)).",
+    )
+    parser.add_argument(
+        "--wfmax",
+        action="store_true",
+        help="Compute WFmax (IC-weighted Fmax) and avgic at Fmax threshold.",
+    )
 
     args = parser.parse_args()
 
@@ -354,6 +488,11 @@ def main():
 
     thresholds = make_thresholds(scores, args)
 
+    use_ic_metrics = args.smin or args.wfmax
+    if use_ic_metrics:
+        obo_terms = parse_obo(args.go_obo)
+        ic, norm_ic = compute_ic_from_obo(truth_sets, obo_terms)
+
     rows = []
 
     for threshold in thresholds:
@@ -365,6 +504,14 @@ def main():
             "recall": recall,
             "f1": f1,
         }
+
+        if use_ic_metrics:
+            wf, s, avg_ic_val = protein_centric_metrics_ic(
+                scores, truth_sets, threshold, ic, norm_ic
+            )
+            row["wf"] = wf
+            row["s"] = s
+            row["avg_ic"] = avg_ic_val
 
         if args.score_direction == "lower":
             row["original_score_cutoff"] = -threshold
@@ -390,12 +537,26 @@ def main():
     print(f"precision: {best['precision']:.4f}")
     print(f"recall: {best['recall']:.4f}")
 
+    if use_ic_metrics and args.wfmax:
+        print(f"avgic: {best['avg_ic']:.4f}")
+
     curve_sorted = curve.sort_values("recall")
     aupr_threshold_curve = trapezoid_area(
         curve_sorted["precision"].values,
         curve_sorted["recall"].values,
     )
     print(f"AUPR_threshold_curve: {aupr_threshold_curve:.4f}")
+
+    if use_ic_metrics:
+        if args.wfmax:
+            wf_best = curve.sort_values(["wf", "threshold"], ascending=[False, True]).iloc[0]
+            print(f"WFmax: {wf_best['wf']:.4f}")
+            if args.score_direction == "lower":
+                print(f"wfmax_threshold_transformed: {wf_best['threshold']:.6g}")
+            else:
+                print(f"wfmax_threshold: {wf_best['threshold']:.6g}")
+        if args.smin:
+            print(f"Smin: {curve['s'].min():.4f}")
 
     if args.auc or args.aupr_macro:
         labels = make_label_matrix(scores, truth_sets)
