@@ -415,15 +415,22 @@ def main():
 
     df = pd.DataFrame({'protein_id': [protein_ids[i] for i in order]})
     for name, scores in all_scores:
-        df[f"{name}_score"] = scores[order].astype(float)
+        df[name] = scores[order].astype(float)
 
     # ------------------------------------------------------------------ #
-    # Save
+    # Save wide + long
     # ------------------------------------------------------------------ #
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(out_path, sep='\t', index=False, float_format='%.4f')
-    logger.info(f"Saved {len(df):,} results to {out_path}")
+    logger.info(f"Saved {len(df):,} results (wide) to {out_path}")
+
+    cav_cols = [name for name, _ in all_scores]
+    long_df = df.melt(id_vars='protein_id', value_vars=cav_cols,
+                      var_name='cav', value_name='score')
+    long_path = out_path.with_suffix('.long.tsv')
+    long_df.to_csv(long_path, sep='\t', index=False, float_format='%.4f')
+    logger.info(f"Saved {len(long_df):,} results (long) to {long_path}")
 
     print(f"\n--- Top {min(10, len(df))} proteins ---")
     print(df.head(10).to_string(index=False))
