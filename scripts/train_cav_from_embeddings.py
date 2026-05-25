@@ -78,7 +78,17 @@ def main():
                         help='Random seed (default: 42)')
     parser.add_argument('--version', default='v1',
                         help='Artifact version string (default: v1)')
+    parser.add_argument('--scaler-pkl', default=None,
+                        help='Path to a pre-fit StandardScaler (joblib pkl). '
+                             'If provided, skips fitting a new scaler so all CAVs '
+                             'share the same coordinate system.')
     args = parser.parse_args()
+
+    scaler = None
+    if args.scaler_pkl:
+        import joblib
+        scaler = joblib.load(args.scaler_pkl)
+        logger.info(f"Loaded pre-fit scaler from {args.scaler_pkl}")
 
     pos = load_vectors(args.pos)
     neg = load_vectors(args.neg)
@@ -101,6 +111,7 @@ def main():
         config=config,
         artifact_version=args.version,
         holdout_fraction=args.holdout,
+        scaler=scaler,
     )
 
 

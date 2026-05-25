@@ -6,9 +6,14 @@
 SPAN_FILE=$1
 FEW_EXEMPLARS=0
 ONLY_DOWNLOAD=0
-for arg in "$@"; do
-    [ "$arg" = "--few-exemplars" ] && FEW_EXEMPLARS=1
-    [ "$arg" = "--only-download" ] && ONLY_DOWNLOAD=1
+SCALER_PKL=""
+args=("$@")
+for i in "${!args[@]}"; do
+    [ "${args[$i]}" = "--few-exemplars" ] && FEW_EXEMPLARS=1
+    [ "${args[$i]}" = "--only-download" ] && ONLY_DOWNLOAD=1
+    if [ "${args[$i]}" = "--scaler-pkl" ]; then
+        SCALER_PKL="${args[$((i+1))]}"
+    fi
 done
 CV_FOLDS=$([ "$FEW_EXEMPLARS" -eq 1 ] && echo 0 || echo 5)
 
@@ -77,7 +82,8 @@ python $tcav_dir/scripts/train_cav_from_embeddings.py \
     --pos  $POS_NPY \
     --neg  $ref_neg \
     --out  $CAV_DIR \
-    --cv-folds $CV_FOLDS
+    --cv-folds $CV_FOLDS \
+    ${SCALER_PKL:+--scaler-pkl "$SCALER_PKL"}
 
 # -------------
 ### Step 5: Clean up intermediate embedding files

@@ -63,10 +63,20 @@ def load_cav(cav_path: str, version: str = 'v1'):
     return cav_vec, None
 
 
-def cav_name(cav_path: str) -> str:
-    """Return a short label for a CAV path (directory name or .npy stem)."""
-    p = Path(cav_path)
-    return p.name if p.is_dir() else p.stem
+def cav_name(cav_path: str, depth: int = 1) -> str:
+    """Return a short label for a CAV path.
+
+    depth=1 (default): immediate directory/file name
+    depth=2: parent_dirname  e.g. GO_0000124_random_positive_train_max1000_cav
+    depth=3: grandparent_parent_dirname, etc.
+    """
+    p = Path(cav_path).resolve()
+    parts = list(p.parts)
+    stem = p.stem if p.is_file() else p.name
+    if depth <= 1:
+        return stem
+    ancestors = parts[-(depth):-1]  # depth-1 components above the leaf
+    return "_".join(ancestors + [stem])
 
 
 def score_proteins(embs: np.ndarray, cav_vec: np.ndarray, scaler) -> np.ndarray:
@@ -214,6 +224,21 @@ def main():
                         help='One or more CAV artifact directories or bare .npy files.')
     parser.add_argument('--version', default='v1',
                         help='CAV artifact version suffix (default: v1).')
+    parser.add_argument('--cav-name-depth', type=int, default=1,
+                        help='Number of path components (from the right) to use as the '
+                             'CAV column name, joined with "_". '
+                             '1=dir name only (default), 2=parent_dirname, etc. '
+                             'Useful when many CAVs share the same directory name '
+                             '(e.g. random_positive_train_max1000_cav) and the GO/EC '
+                             'term ID lives one level up.')
+    parser.add_argument('--scaler-pkl', default=None,
+                        help='Path to a shared reference scaler (joblib pkl). '
+                             'If provided, all CAVs are scored with a single '
+                             'matrix multiply instead of a per-CAV loop.')
+    parser.add_argument('--cav-name-strip', default=None,
+                        help='Strip this suffix from each CAV name after depth assembly. '
+                             'E.g. "_positive_train_max1000_cav" to turn '
+                             '"GO_0000124_random_positive_train_max1000_cav" → "GO_0000124_random".')
 
     # Embedding source — exactly one of --pkl or --embed-fasta required
     emb_group = parser.add_mutually_exclusive_group(required=True)
@@ -285,8 +310,11 @@ def main():
     for cav_path in args.cav:
         logger.info(f"Loading CAV from {cav_path}")
         cav_vec, scaler = load_cav(cav_path, version=args.version)
-        logger.info(f"  {cav_name(cav_path)}: dim={cav_vec.shape[0]}")
-        cavs.append((cav_name(cav_path), cav_vec, scaler))
+        name = cav_name(cav_path, depth=args.cav_name_depth)
+        if args.cav_name_strip and name.endswith(args.cav_name_strip):
+            name = name[: -len(args.cav_name_strip)]
+        logger.info(f"  {name}: dim={cav_vec.shape[0]}")
+        cavs.append((name, cav_vec, scaler))
 
     if args.sort_cav >= len(cavs):
         parser.error(f"--sort-cav {args.sort_cav} is out of range ({len(cavs)} CAVs).")
@@ -328,10 +356,22 @@ def main():
         logger.info(f"  {len(protein_ids):,} proteins, hidden_dim={embs.shape[1]}")
 
         all_scores = []
-        for name, cav_vec, scaler in cavs:
-            scores = score_proteins(embs, cav_vec, scaler)
-            logger.info(f"  [{name}] min={scores.min():.4f}, mean={scores.mean():.4f}, max={scores.max():.4f}")
-            all_scores.append((name, scores))
+        if args.scaler_pkl:
+            import joblib
+            shared_scaler = joblib.load(args.scaler_pkl)
+            logger.info(f"Using shared scaler from {args.scaler_pkl} — batching all CAV dot products")
+            X = shared_scaler.transform(embs.astype('float32'))
+            cav_matrix = np.stack([cav_vec for _, cav_vec, _ in cavs], axis=1)  # (dim, n_cavs)
+            score_matrix = X @ cav_matrix                                         # (n_proteins, n_cavs)
+            for i, (name, _, _) in enumerate(cavs):
+                scores = score_matrix[:, i]
+                logger.info(f"  [{name}] min={scores.min():.4f}, mean={scores.mean():.4f}, max={scores.max():.4f}")
+                all_scores.append((name, scores))
+        else:
+            for name, cav_vec, scaler in cavs:
+                scores = score_proteins(embs, cav_vec, scaler)
+                logger.info(f"  [{name}] min={scores.min():.4f}, mean={scores.mean():.4f}, max={scores.max():.4f}")
+                all_scores.append((name, scores))
 
     # ------------------------------------------------------------------ #
     # Length correction (optional, applied to each CAV)
