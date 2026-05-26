@@ -1,0 +1,21 @@
+# TCAV Configuration Template
+# Copy this file to config.local.yaml and edit with your paths
+# The scripts will look for config.local.yaml first, then fall back to config.yaml
+
+# Model path - REQUIRED: Set this to your ESM++ or ESM2 model directory
+model: /path/to/your/ESMplusplus_large
+
+# Reference population paths (relative to repo root)
+reference_neg: reference_population/neg_embeddings.npy
+reference_pca: reference_population/global_pca.pkl
+
+# Embedding parameters (used by hf_embed_new.py)
+embedding:
+  layer: -11              # Layer to extract embeddings from (-11 = second-to-last)
+  max_length: 2048        # Maximum sequence length
+  batch_size: 1           # Batch size for embedding
+  pooling_strategy: mean  # Pooling strategy for sequence embeddings
+
+# Training parameters
+training:
+  cv_folds: 5             # Cross-validation folds (set to 0 for few exemplars)

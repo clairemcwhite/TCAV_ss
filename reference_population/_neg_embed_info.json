@@ -1,0 +1,4 @@
+{
+  "pooling": "full_sequence",
+  "source_jsonl": "/groups/clairemcwhite/ahmad_workspace/esm_c/neg_data/neg_10000.jsonl"
+}

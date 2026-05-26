@@ -14,216 +14,67 @@ We present an automated approach for identifying and annotating motifs and domai
 ## Repository Structure
 
 ```
+├── hf_embed_new.py          # Embedding script (included in repo)
+├── train_cav_from_span.sh   # Main training wrapper script
+├── config.yaml              # Configuration template (copy to config.local.yaml)
 ├── tcav/                    # Core TCAV implementation
 │   └── src/                 # Source modules (attribution, detection, training, evaluation)
-├── scripts/                 # Core pipeline scripts
+├── scripts/                 # Pipeline scripts
 │   ├── prepare_embeddings.py        # Pool per-residue embeddings by span
 │   ├── train_cav_from_embeddings.py # Train a CAV from positive/negative matrices
-│   ├── fit_global_pca.py            # Fit PCA on reference population
+│   ├── query_proteins_by_cav.py     # Rank/scan a FASTA against a trained CAV
+│   ├── jsonl_to_span.py             # Convert JSONL test data to span format
 │   ├── evaluate_cav.py              # Evaluate CAV performance
 │   ├── scan_sequence.py             # Sliding-window scan of a sequence
-│   └── run_attribution.py           # Attribution analysis
-├── specific_scripts/        # Specialized analysis and visualization scripts
-│   └── query_proteins_by_cav.py    # Rank/scan a FASTA against a trained CAV
-├── examples/                # Example input files (see Examples section)
-├── test_data/               # Full benchmark dataset (60 Pfam motifs)
+│   ├── run_attribution.py           # Attribution analysis
+│   └── fit_global_pca.py            # Fit PCA on reference population
+├── reference_population/    # Reference negative embeddings (see Setup)
+├── examples/                # Example input files
+├── test_data/               # Full benchmark dataset (60 Pfam motifs, JSONL format)
 └── test_data_small/         # Small subset for quick validation
 ```
 
-## Installation
+## Setup
+
+### 1. Clone and Install Dependencies
 
 ```bash
 git clone <repository-url>
 cd TCAV_ss
-pip install -r tcav/requirements.txt
+pip install -r requirements.txt
+
+# Or use conda
+conda env create -f environment.yml
+conda activate tcav_protein
 ```
 
-## Pipeline
+### 2. Configure Paths
 
-The pipeline has a one-time setup step (Step 00) followed by five per-concept steps (Steps 01–05).
-
-### Step 00 — Build reference negative population (one-time setup)
-
-Embed a large set of random/background proteins to use as negatives for all CAV training. Output lives in `reference_population/`.
+Copy the configuration template and edit with your paths:
 
 ```bash
-conda activate /groups/clairemcwhite/envs/core_pkgs4
-
-f=/groups/clairemcwhite/ahmad_workspace/esm_c/neg_data/neg_10000.fasta
-
-# Select layer -11 (second-to-last layer), as in the paper
-python /groups/clairemcwhite/mcwlab_utils/hf_embed_new.py \
-    -f $f \
-    -o reference_population/neg_10000.pkl \
-    -ss mean \
-    -s \
-    -l -11 \
-    -m /groups/clairemcwhite/models/ESMplusplus_large \
-    -b 1 \
-    --max_length 2048
+cp config.yaml config.local.yaml
+# Edit config.local.yaml and set your model path
 ```
 
-### Step 01 — Embed input FASTA
+**Required configuration:**
+- `model`: Path to your ESM++, ESM2, or ESM-C model directory
 
-Embed the protein(s) that define your concept. Both per-residue (AA) and sequence-level embeddings are needed for span pooling in Step 02.
+**Example `config.local.yaml`:**
+```yaml
+model: /path/to/ESMplusplus_large
+reference_neg: reference_population/neg_embeddings.npy
+reference_pca: reference_population/global_pca.pkl
 
-```bash
-python /groups/clairemcwhite/claire_workspace/github/mcwlab_utils/hf_embed_new.py \
-    -f $INPUT_FASTA \
-    -o ${INPUT_FASTA}.pkl \
-    --get_aa_embeddings \
-    --get_sequence_embedding \
-    --strat mean \
-    -l -11 \
-    -m /groups/clairemcwhite/models/ESMplusplus_large \
-    -b 1 \
-    --max_length 2048
+embedding:
+  layer: -11
+  max_length: 2048
+  batch_size: 1
 ```
 
-### Step 02 — Pool embeddings by span → positive matrix
+### 3. Build Reference Negative Population
 
-Extract the region(s) defined in your span file and pool them into a positive embedding matrix.
-
-```bash
-python $tcav_dir/scripts/prepare_embeddings.py \
-    --pkl   ${INPUT_FASTA}.pkl \
-    --info  ${INPUT_FASTA}.pkl.seqnames \
-    --spans $SPAN_FILE \
-    --out   ${SPAN_FILE%.spans}_pos.npy
-```
-
-### Step 03 — Train CAV
-
-Train a linear classifier (CAV) separating the positive span embeddings from the reference negative population.
-
-```bash
-python $tcav_dir/scripts/train_cav_from_embeddings.py \
-    --pos     ${SPAN_FILE%.spans}_pos.npy \
-    --neg     $ref_neg \
-    --out     $concept_dir \
-    --cv-folds 0 \
-    --pca-pkl  $ref_pca
-```
-
-### Step 04 — Embed search FASTA
-
-Embed the sequences you want to rank. Only sequence-level embeddings are needed here. This step is skipped automatically if the `.pkl` already exists.
-
-```bash
-if [ -f "$search_pkl" ]; then
-    echo "Skipping embedding: $search_pkl already exists"
-else
-    python /groups/clairemcwhite/claire_workspace/github/mcwlab_utils/hf_embed_new.py \
-        -f $SEARCH_FASTA \
-        -o $search_pkl \
-        --get_sequence_embedding \
-        --strat mean \
-        -l -11 \
-        -m /groups/clairemcwhite/models/ESMplusplus_large \
-        -b 1 \
-        --max_length 2048
-fi
-```
-
-> **On-the-fly embedding:** For small search FASTAs you can skip pre-computing the pkl and pass `--fasta` directly to the query script (Step 05); it will embed on the fly.
-
-### Step 05 — Query search FASTA against CAV
-
-Score and rank every sequence (or every sliding window) in the search set against the trained CAV.
-
-```bash
-python $tcav_dir/specific_scripts/query_proteins_by_cav.py \
-    --cav   $concept_dir \
-    --pkl   $search_pkl \
-    --out   $out_tsv \
-    --k     -1 \
-    --sliding-window \
-    --spans $SPAN_FILE \
-    --fasta $SEARCH_FASTA
-```
-
-`--k -1` returns all results; `--sliding-window` enables per-window scoring; `--spans` and `--fasta` are used to annotate known positive regions in the output.
-
-### Full example wrapper
-
-A complete wrapper that sets variables and runs Steps 01–05 end-to-end:
-
-```bash
-# -------------
-# Inputs — replace these placeholders before running
-# -------------
-SPAN_FILE=fastas/pairs/myc_mad/MYC_HUMAN.fasta.spans
-INPUT_FASTA=fastas/pairs/myc_mad/MYC_HUMAN.fasta
-SEARCH_FASTA=/xdisk/clairemcwhite/clairemcwhite/uniprot_human_all.fasta
-
-# -------------
-# Paths
-# -------------
-source ~/.bashrc
-conda activate /groups/clairemcwhite/envs/core_pkgs4
-export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
-
-tcav_dir=/groups/clairemcwhite/claire_workspace/github/TCAV_ss
-ref_neg=reference_population/neg_10000.pkl
-ref_pca=reference_population/global_pca_v1.pkl
-
-concept_dir=${SPAN_FILE%.spans}_concept
-search_pkl=${SEARCH_FASTA}.pkl
-out_tsv=${SPAN_FILE%.spans}_query_results.tsv
-
-# Step 01
-if [ -f "${INPUT_FASTA}.pkl" ]; then
-    echo "Skipping embedding: ${INPUT_FASTA}.pkl already exists"
-else
-    python /groups/clairemcwhite/claire_workspace/github/mcwlab_utils/hf_embed_new.py \
-        -f $INPUT_FASTA -o ${INPUT_FASTA}.pkl \
-        --get_aa_embeddings --get_sequence_embedding \
-        --strat mean -l -11 \
-        -m /groups/clairemcwhite/models/ESMplusplus_large \
-        -b 1 --max_length 2048
-fi
-
-# Step 02
-python $tcav_dir/scripts/prepare_embeddings.py \
-    --pkl ${INPUT_FASTA}.pkl --info ${INPUT_FASTA}.pkl.seqnames \
-    --spans $SPAN_FILE --out ${SPAN_FILE%.spans}_pos.npy
-
-# Step 03
-python $tcav_dir/scripts/train_cav_from_embeddings.py \
-    --pos ${SPAN_FILE%.spans}_pos.npy --neg $ref_neg \
-    --out $concept_dir --cv-folds 0 --pca-pkl $ref_pca
-
-# Step 04
-if [ -f "$search_pkl" ]; then
-    echo "Skipping embedding: $search_pkl already exists"
-else
-    python /groups/clairemcwhite/claire_workspace/github/mcwlab_utils/hf_embed_new.py \
-        -f $SEARCH_FASTA -o $search_pkl \
-        --get_sequence_embedding --strat mean -l -11 \
-        -m /groups/clairemcwhite/models/ESMplusplus_large \
-        -b 1 --max_length 2048
-fi
-
-# Step 05
-python $tcav_dir/specific_scripts/query_proteins_by_cav.py \
-    --cav $concept_dir --pkl $search_pkl --out $out_tsv \
-    --k -1 --sliding-window --spans $SPAN_FILE --fasta $SEARCH_FASTA
-```
-
-## Examples
-
-The `examples/` directory contains input files for a receptor-like kinase domain concept:
-
-| File | Description |
-|------|-------------|
-| `examples/RLK5_ARATH.fasta` | Input protein sequence (RLK5, *A. thaliana*) |
-| `examples/RLK5_ARATH.fasta.span` | Span defining the kinase domain (residues 404–591) |
-
-Run the pipeline with these files by setting:
-```bash
-SPAN_FILE=examples/RLK5_ARATH.fasta.span
-INPUT_FASTA=examples/RLK5_ARATH.fasta
-```
+The repository includes pre-computed reference negatives in `reference_population/`. If you need to create your own, see `reference_population/README.md` for instructions.
 
 ## Input Formats
 
@@ -242,19 +93,199 @@ Tab-separated, one span per line:
 <accession>	<start>	<end>
 ```
 
-The accession must match the FASTA header (full `sp|...|...` form or just the bare ID, depending on your embed script). Start and end are 1-based, inclusive residue positions.
+The accession must match the FASTA header (full `sp|...|...` form or just the bare ID). Start and end are 1-based, inclusive residue positions.
 
 ```
 sp|P47735|RLK5_ARATH	404	591
+```
+
+### JSONL (test data format)
+
+The `test_data/` directories contain JSONL files with ground truth annotations:
+
+```json
+{
+  "accession": "P12345",
+  "sequence": "MTKL...",
+  "length": 388,
+  "protein_name": "Example protein",
+  "gene_name": "GENE1",
+  "target_motif": "PF00001",
+  "ground_truth_annotations": [
+    {"motif_id": "PF00001", "start": 36, "end": 312, "name": "Example domain"}
+  ]
+}
+```
+
+Convert to FASTA/span format using:
+```bash
+python scripts/jsonl_to_span.py input.jsonl --format both
+```
+
+## Pipeline
+
+The pipeline consists of five steps for each concept. The provided `train_cav_from_span.sh` script runs Steps 01–04 automatically.
+
+### Step 01 — Embed input FASTA
+
+Embed the protein(s) that define your concept. Both per-residue (AA) and sequence-level embeddings are needed for span pooling in Step 02.
+
+```bash
+python hf_embed_new.py \
+    -f $INPUT_FASTA \
+    -o ${INPUT_FASTA}.pkl \
+    --get_aa_embeddings \
+    --get_sequence_embedding \
+    --strat mean \
+    -l -11 \
+    -m $MODEL_PATH \
+    -b 1 \
+    --max_length 2048
+```
+
+The `train_cav_from_span.sh` script handles this automatically using paths from your config file.
+
+### Step 02 — Pool embeddings by span → positive matrix
+
+Extract the region(s) defined in your span file and pool them into a positive embedding matrix.
+
+```bash
+python scripts/prepare_embeddings.py \
+    --pkl   ${INPUT_FASTA}.pkl \
+    --info  ${INPUT_FASTA}.pkl.seqnames \
+    --spans $SPAN_FILE \
+    --out   ${SPAN_FILE%.span}_pos.npy
+```
+
+### Step 03 — Train CAV
+
+Train a linear classifier (CAV) separating the positive span embeddings from the reference negative population.
+
+```bash
+python scripts/train_cav_from_embeddings.py \
+    --pos     ${SPAN_FILE%.span}_pos.npy \
+    --neg     reference_population/neg_embeddings.npy \
+    --out     $concept_dir \
+    --cv-folds 5 \
+    --pca-pkl reference_population/global_pca.pkl
+```
+
+### Step 04 — Embed search FASTA
+
+Embed the sequences you want to rank. Only sequence-level embeddings are needed here.
+
+```bash
+python hf_embed_new.py \
+    -f $SEARCH_FASTA \
+    -o ${SEARCH_FASTA}.pkl \
+    --get_sequence_embedding \
+    --strat mean \
+    -l -11 \
+    -m $MODEL_PATH \
+    -b 1 \
+    --max_length 2048
+```
+
+> **Note:** For small search FASTAs you can skip pre-computing the pkl and pass `--embed-fasta` directly to the query script (Step 05); it will embed on the fly.
+
+### Step 05 — Query search FASTA against CAV
+
+Score and rank every sequence (or every sliding window) in the search set against the trained CAV.
+
+```bash
+python scripts/query_proteins_by_cav.py \
+    --cav   $concept_dir \
+    --pkl   ${SEARCH_FASTA}.pkl \
+    --out   results.tsv \
+    --k     -1 \
+    --sliding-window \
+    --spans $SPAN_FILE \
+    --fasta $SEARCH_FASTA
+```
+
+**Options:**
+- `--k -1`: Returns all results (or set to N for top-N)
+- `--sliding-window`: Enable per-window scoring for motif localization
+- `--spans` and `--fasta`: Annotate known positive regions in output
+
+## Running the Example
+
+The `examples/` directory contains a complete example for a receptor-like kinase domain:
+
+| File | Description |
+|------|-------------|
+| `RLK5_ARATH.fasta` | Input protein sequence (RLK5, *A. thaliana*) |
+| `RLK5_ARATH.fasta.span` | Span defining the kinase domain (residues 404–591) |
+
+### Quick Start: Train CAV on Example
+
+```bash
+# Train CAV for kinase domain (runs Steps 01-04)
+bash train_cav_from_span.sh examples/RLK5_ARATH.fasta.span
+```
+
+This will:
+1. Embed the RLK5 protein sequence
+2. Pool embeddings for the kinase domain region (residues 404–591)
+3. Train a CAV against the reference negative population
+4. Output results to `examples/RLK5_ARATH_cav/`
+
+### Complete Workflow: Train and Query
+
+Train the CAV and search for similar domains in a proteome:
+
+```bash
+# Step 1-4: Train CAV (automated)
+bash train_cav_from_span.sh examples/RLK5_ARATH.fasta.span
+
+# Step 5: Query against a search database
+SEARCH_FASTA=path/to/your/proteome.fasta
+
+# Embed search sequences
+python hf_embed_new.py \
+    -f $SEARCH_FASTA \
+    -o ${SEARCH_FASTA}.pkl \
+    --get_sequence_embedding \
+    --strat mean \
+    -l -11 \
+    -m $(grep "^model:" config.local.yaml | cut -d' ' -f2) \
+    -b 1 \
+    --max_length 2048
+
+# Query with the trained CAV
+python scripts/query_proteins_by_cav.py \
+    --cav examples/RLK5_ARATH_cav \
+    --pkl ${SEARCH_FASTA}.pkl \
+    --out kinase_predictions.tsv \
+    --k -1 \
+    --sliding-window
+```
+
+### Working with Test Data
+
+The `test_data/` directory contains JSONL benchmark files. Convert them to usable formats:
+
+```bash
+# Convert single file to FASTA and span format
+python scripts/jsonl_to_span.py test_data/PF00001/test_100.jsonl --format both
+
+# This creates:
+#   test_data/PF00001/test_100.span  (span annotations)
+#   test_data/PF00001/test_100.fasta (sequences)
+
+# Convert entire directory
+python scripts/jsonl_to_span.py test_data/ --recursive --format both
+
+# Then train a CAV
+bash train_cav_from_span.sh test_data/PF00001/test_100.span
 ```
 
 ## Models Supported
 
 - **ESM++** (`ESMplusplus_large`) — recommended for best performance
 - **ESM2** (`ESM2_t33_650M_UR50D`, `ESM2_t36_3B_UR50D`)
-- **ESM-C** (`ESMC_300M`, `ESMC_600M`)
 
-Layer `-11` (second-to-last transformer layer) is used throughout, following the arxiv paper.
+Layer `-11` (25th transformer layer) is used throughout, following the arxiv paper.
 
 ## Citation
 
