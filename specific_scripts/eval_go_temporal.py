@@ -143,23 +143,25 @@ def log_prob_normal(x: float, mu: float, sigma: float) -> float:
 # Gold standard loading
 # ---------------------------------------------------------------------------
 
-def load_gold_standard(path: str, date_cutoff: int, min_n: int) -> pd.DataFrame:
-    df = pd.read_csv(path, sep="\t", dtype=str)
-    df.columns = df.columns.str.strip()
+COL_NAMES = [
+    "DB", "DB_Object_ID", "Qualifier", "GO_ID", "DB_Reference",
+    "Evidence_Code", "With_From", "Interacting_taxon_ID", "Date",
+    "Assigned_by", "Annotation_Extension", "Annotation_Properties",
+]
 
-    required = {"GENE PRODUCT ID", "GO TERM", "GO EVIDENCE CODE", "DATE"}
-    missing = required - set(df.columns)
-    if missing:
-        raise ValueError(f"Gold standard file is missing columns: {missing}")
+
+def load_gold_standard(path: str, date_cutoff: int, min_n: int) -> pd.DataFrame:
+    df = pd.read_csv(path, sep="\t", dtype=str, header=None, names=COL_NAMES,
+                     comment="!")
 
     # Experimental evidence only
-    df = df[df["GO EVIDENCE CODE"].isin(DIRECT_ASSAY_CODES)].copy()
+    df = df[df["Evidence_Code"].isin(DIRECT_ASSAY_CODES)].copy()
 
     # Post-cutoff dates only
-    df["DATE"] = pd.to_numeric(df["DATE"], errors="coerce")
-    df = df[df["DATE"] > date_cutoff]
+    df["Date"] = pd.to_numeric(df["Date"], errors="coerce")
+    df = df[df["Date"] > date_cutoff]
 
-    df = df.rename(columns={"GENE PRODUCT ID": "protein_id", "GO TERM": "go_term"})
+    df = df.rename(columns={"DB_Object_ID": "protein_id", "GO_ID": "go_term"})
     df = df[["protein_id", "go_term"]].drop_duplicates()
 
     # Keep only GO terms with >= min_n unique proteins
