@@ -176,7 +176,11 @@ def load_gold_standard(path: str, date_cutoff: int, min_n: int,
 
     # Post-cutoff dates only
     df["Date"] = pd.to_numeric(df["Date"], errors="coerce")
+    logger.info(f"Date range before filter: {int(df['Date'].min())} – {int(df['Date'].max())} "
+                f"({len(df)} rows, {df['GO_ID'].nunique()} GO terms, {df['DB_Object_ID'].nunique()} proteins)")
     df = df[df["Date"] > date_cutoff]
+    logger.info(f"Date range after  filter (> {date_cutoff}): {int(df['Date'].min())} – {int(df['Date'].max())} "
+                f"({len(df)} rows, {df['GO_ID'].nunique()} GO terms, {df['DB_Object_ID'].nunique()} proteins)")
 
     df = df.rename(columns={"DB_Object_ID": "protein_id", "GO_ID": "go_term"})
     df = df[["protein_id", "go_term"]].drop_duplicates()
