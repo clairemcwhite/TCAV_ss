@@ -315,7 +315,15 @@ def main():
         val_span, args.retrieve_script, args.embed_script, args.model
     )
     val_embs, val_ids = load_sequence_embeddings(str(val_pkl))
-    val_id_to_idx     = {pid: i for i, pid in enumerate(val_ids)}
+    # Build lookup that handles both bare accessions ("Q15185") and full
+    # FASTA-header IDs ("sp|Q15185|TEBP_HUMAN") by indexing every |-part.
+    _SKIP = {"sp", "tr", "sw", "ref"}
+    val_id_to_idx = {}
+    for i, sid in enumerate(val_ids):
+        val_id_to_idx[sid] = i
+        for part in sid.split("|"):
+            if part and part not in _SKIP:
+                val_id_to_idx.setdefault(part, i)
     logger.info(f"Validation embeddings loaded: {len(val_ids)} proteins")
 
     missing_val = set(val_proteins) - set(val_ids)
