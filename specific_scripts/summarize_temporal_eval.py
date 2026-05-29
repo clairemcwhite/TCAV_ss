@@ -191,7 +191,6 @@ def main():
 
         row = {
             "go_term":                go_id,
-            "go_term_name":           term_names.get(go_id, "") if term_names else "",
             "n_val_proteins":         len(grp),
             "n_test_neg":             len(neg_scores),
             "auc_val_vs_test_neg":    auc,
@@ -203,6 +202,8 @@ def main():
             "median_test_pos_zscore": float(grp["test_pos_zscore"].median()),
         }
 
+        if term_names is not None:
+            row["go_term_name"]    = term_names.get(go_id, "")
         if depths is not None:
             row["depth"]           = depths.get(go_id, np.nan)
             row["n_ancestors"]     = ancestor_counts.get(go_id, np.nan)
@@ -261,7 +262,7 @@ def main():
     cols = ["go_term", "n_val_proteins", "auc_val_vs_test_neg",
             "pct_llr_positive", "median_test_pos_pct", "median_test_neg_pct"]
     if term_names is not None:
-        cols = ["go_term", "go_term_name"] + cols[1:]
+        cols += ["go_term_name"]
     if depths is not None:
         cols += ["depth", "n_ancestors"]
 
