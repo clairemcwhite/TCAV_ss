@@ -51,10 +51,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Experimental evidence codes accepted as "direct assay"
+# ECO IDs for direct / experimental assay evidence (as stored in GPAD Evidence_Code column)
 DIRECT_ASSAY_CODES = {
-    "IDA", "IMP", "IGI", "IPI", "IEP", "EXP",   # classic experimental
-    "HDA", "HMP", "HGI", "HEP",                  # high-throughput experimental
+    "ECO:0000314",  # IDA  - Inferred from Direct Assay
+    "ECO:0000315",  # IMP  - Inferred from Mutant Phenotype
+    "ECO:0000316",  # IGI  - Inferred from Genetic Interaction
+    "ECO:0000353",  # IPI  - Inferred from Physical Interaction
+    "ECO:0000270",  # IEP  - Inferred from Expression Pattern
+    "ECO:0000269",  # EXP  - Inferred from Experiment
+    "ECO:0007005",  # HDA  - High-throughput Direct Assay
+    "ECO:0007001",  # HMP  - High-throughput Mutant Phenotype
+    "ECO:0007003",  # HGI  - High-throughput Genetic Interaction
+    "ECO:0007007",  # HEP  - High-throughput Expression Pattern
 }
 
 CAV_SUBDIR = "random_positive_train_max1000_cav"
@@ -150,12 +158,15 @@ COL_NAMES = [
 ]
 
 
-def load_gold_standard(path: str, date_cutoff: int, min_n: int) -> pd.DataFrame:
+def load_gold_standard(path: str, date_cutoff: int, min_n: int,
+                       filter_evidence: bool = False) -> pd.DataFrame:
     df = pd.read_csv(path, sep="\t", dtype=str, header=None, names=COL_NAMES,
                      comment="!")
 
-    # Experimental evidence only
-    df = df[df["Evidence_Code"].isin(DIRECT_ASSAY_CODES)].copy()
+    if filter_evidence:
+        before = len(df)
+        df = df[df["Evidence_Code"].isin(DIRECT_ASSAY_CODES)].copy()
+        logger.info(f"Evidence filter: {before} → {len(df)} rows")
 
     # Post-cutoff dates only
     df["Date"] = pd.to_numeric(df["Date"], errors="coerce")
@@ -163,6 +174,10 @@ def load_gold_standard(path: str, date_cutoff: int, min_n: int) -> pd.DataFrame:
 
     df = df.rename(columns={"DB_Object_ID": "protein_id", "GO_ID": "go_term"})
     df = df[["protein_id", "go_term"]].drop_duplicates()
+
+    # GPAD 2.0 stores protein IDs as CURIEs e.g. "UniProtKB:A0A021WW32".
+    # Strip the "DB:" prefix so retrieve_fasta.py gets bare accessions.
+    df["protein_id"] = df["protein_id"].str.split(":").str[-1]
 
     # Keep only GO terms with >= min_n unique proteins
     counts = df.groupby("go_term")["protein_id"].nunique()
@@ -199,6 +214,9 @@ def main():
                         help="Min test proteins per GO term (default: 5).")
     parser.add_argument("--date-cutoff", type=int, default=20211231,
                         help="Keep annotations with DATE > this value YYYYMMDD (default: 20211231).")
+    parser.add_argument("--filter-evidence", action="store_true",
+                        help="Restrict to direct/experimental ECO evidence codes. "
+                             "Off by default (use when your file is not already pre-filtered).")
     parser.add_argument("--retrieve-script",
                         default="/groups/clairemcwhite/claire_workspace/github/TCAV_ss/specific_scripts/retrieve_fasta.py",
                         help="Path to retrieve_fasta.py.")
@@ -236,7 +254,8 @@ def main():
     # ------------------------------------------------------------------
     # Load gold standard
     # ------------------------------------------------------------------
-    gold     = load_gold_standard(args.gold_standard, args.date_cutoff, args.min_n)
+    gold     = load_gold_standard(args.gold_standard, args.date_cutoff, args.min_n,
+                                  filter_evidence=args.filter_evidence)
     go_terms = sorted(gold["go_term"].unique())
     logger.info(f"Evaluating {len(go_terms)} GO terms")
 
