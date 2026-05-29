@@ -301,27 +301,28 @@ def main():
     logger.info(f"  Proteins to retrieve after CAV filter: {gold['protein_id'].nunique()}")
 
     # ------------------------------------------------------------------
-    # Build / load test protein embeddings (only for proteins in evaluable terms)
+    # Build / load validation protein embeddings
+    # (proteins from the post-cutoff annotation file being evaluated)
     # ------------------------------------------------------------------
-    test_proteins = sorted(gold["protein_id"].unique())
-    test_span     = eval_embed_dir / "test_proteins.span"
-    if not test_span.exists():
-        test_span.write_text("\n".join(test_proteins) + "\n")
-        logger.info(f"Wrote test span: {test_span} ({len(test_proteins)} proteins)")
+    val_proteins = sorted(gold["protein_id"].unique())
+    val_span     = eval_embed_dir / "val_proteins.span"
+    if not val_span.exists():
+        val_span.write_text("\n".join(val_proteins) + "\n")
+        logger.info(f"Wrote validation span: {val_span} ({len(val_proteins)} proteins)")
 
-    logger.info(f"Ensuring test protein embeddings exist (eval_embed_dir={eval_embed_dir})...")
-    test_pkl = ensure_fasta_and_pkl(
-        test_span, args.retrieve_script, args.embed_script, args.model
+    logger.info(f"Ensuring validation protein embeddings exist (eval_embed_dir={eval_embed_dir})...")
+    val_pkl = ensure_fasta_and_pkl(
+        val_span, args.retrieve_script, args.embed_script, args.model
     )
-    test_embs, test_ids = load_sequence_embeddings(str(test_pkl))
-    test_id_to_idx      = {pid: i for i, pid in enumerate(test_ids)}
-    logger.info(f"Test embeddings loaded: {len(test_ids)} proteins")
+    val_embs, val_ids = load_sequence_embeddings(str(val_pkl))
+    val_id_to_idx     = {pid: i for i, pid in enumerate(val_ids)}
+    logger.info(f"Validation embeddings loaded: {len(val_ids)} proteins")
 
-    missing_test = set(test_proteins) - set(test_ids)
-    if missing_test:
+    missing_val = set(val_proteins) - set(val_ids)
+    if missing_val:
         logger.warning(
-            f"{len(missing_test)} gold-standard proteins not found in test pkl "
-            f"(e.g. {sorted(missing_test)[:3]})"
+            f"{len(missing_val)} validation proteins not found in pkl — likely failed retrieval "
+            f"(e.g. {sorted(missing_val)[:3]})"
         )
 
     # ------------------------------------------------------------------
@@ -348,22 +349,22 @@ def main():
         go_dir  = find_go_dir(go_id, go_base_dirs)
         cav_dir = go_dir / CAV_SUBDIR
 
-        test_proteins_for_term = gold[gold["go_term"] == go_id]["protein_id"].tolist()
-        remaining = [p for p in test_proteins_for_term if (go_id, p) not in completed_pairs]
+        val_proteins_for_term = gold[gold["go_term"] == go_id]["protein_id"].tolist()
+        remaining = [p for p in val_proteins_for_term if (go_id, p) not in completed_pairs]
         if not remaining:
-            logger.info(f"{go_id}: all {len(test_proteins_for_term)} proteins already in output — skipping")
+            logger.info(f"{go_id}: all {len(val_proteins_for_term)} validation proteins already in output — skipping")
             continue
-        if len(remaining) < len(test_proteins_for_term):
-            logger.info(f"{go_id}: {len(test_proteins_for_term) - len(remaining)} proteins already done, "
+        if len(remaining) < len(val_proteins_for_term):
+            logger.info(f"{go_id}: {len(val_proteins_for_term) - len(remaining)} validation proteins already done, "
                         f"{len(remaining)} remaining")
 
-        logger.info(f"Processing {go_id}")
+        logger.info(f"Processing {go_id} ({len(remaining)} validation proteins)")
 
         # -------------------------------------------------------
-        # Pos / neg CAV scores (cached per GO term)
+        # Test pos / neg CAV score distributions (cached per GO term)
         # -------------------------------------------------------
-        pos_scores_file = out_dir / f"{go_id}_pos_test_scores.tsv"
-        neg_scores_file = out_dir / f"{go_id}_neg_test_scores.tsv"
+        pos_scores_file = out_dir / f"{go_id}_test_pos_scores.tsv"
+        neg_scores_file = out_dir / f"{go_id}_test_neg_scores.tsv"
 
         cav_artifacts = load_cav_artifacts(str(cav_dir), version=args.version)
 
@@ -397,35 +398,36 @@ def main():
         neg_mu, neg_sigma = float(neg_scores.mean()), float(neg_scores.std())
 
         # -------------------------------------------------------
-        # Score each test protein for this GO term
+        # Score each validation protein against this GO term's CAV
+        # and compare to test pos/neg distributions
         # -------------------------------------------------------
         go_term_rows = []
 
         for protein_id in remaining:
-            idx = test_id_to_idx.get(protein_id)
+            idx = val_id_to_idx.get(protein_id)
             if idx is None:
-                logger.warning(f"  {protein_id} not in test pkl — skipping")
+                logger.warning(f"  {protein_id} not in validation pkl — skipping")
                 continue
 
-            test_score = float(
+            val_score = float(
                 compute_projections(
-                    test_embs[idx : idx + 1],
+                    val_embs[idx : idx + 1],
                     cav_artifacts["concept_cav"],
                     scaler,
                 )[0]
             )
 
-            lp_pos = log_prob_normal(test_score, pos_mu, pos_sigma)
-            lp_neg = log_prob_normal(test_score, neg_mu, neg_sigma)
+            lp_pos = log_prob_normal(val_score, pos_mu, pos_sigma)
+            lp_neg = log_prob_normal(val_score, neg_mu, neg_sigma)
             llr    = lp_pos - lp_neg
 
-            pos_zscore = (test_score - pos_mu) / pos_sigma if pos_sigma > 0 else math.nan
-            neg_zscore = (test_score - neg_mu) / neg_sigma if neg_sigma > 0 else math.nan
+            pos_zscore = (val_score - pos_mu) / pos_sigma if pos_sigma > 0 else math.nan
+            neg_zscore = (val_score - neg_mu) / neg_sigma if neg_sigma > 0 else math.nan
 
             go_term_rows.append({
                 "go_term":          go_id,
                 "protein_id":       protein_id,
-                "test_cav_score":   test_score,
+                "val_cav_score":    val_score,
                 # Positive background
                 "pos_n":            len(pos_scores),
                 "pos_mean":         pos_mu,
@@ -440,14 +442,14 @@ def main():
                 "neg_median":       float(np.median(neg_scores)),
                 "neg_min":          float(neg_scores.min()),
                 "neg_max":          float(neg_scores.max()),
-                # Log-probability stats
-                "log_prob_pos":     lp_pos,
-                "log_prob_neg":     lp_neg,
-                "llr":              llr,
-                "pos_zscore":       pos_zscore,
-                "neg_zscore":       neg_zscore,
-                "pos_percentile":   float(stats.percentileofscore(pos_scores, test_score)),
-                "neg_percentile":   float(stats.percentileofscore(neg_scores, test_score)),
+                # Comparison to test pos/neg distributions
+                "log_prob_test_pos":    lp_pos,
+                "log_prob_test_neg":    lp_neg,
+                "llr":                  llr,
+                "test_pos_zscore":      pos_zscore,
+                "test_neg_zscore":      neg_zscore,
+                "test_pos_percentile":  float(stats.percentileofscore(pos_scores, val_score)),
+                "test_neg_percentile":  float(stats.percentileofscore(neg_scores, val_score)),
             })
 
         # Append this GO term's rows immediately
