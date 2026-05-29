@@ -493,8 +493,8 @@ def main():
         print(f"  unique proteins total        : {results['protein_id'].nunique()}")
         print(f"\nLLR summary:")
         print(results["llr"].describe().to_string())
-        print(f"\npos_percentile summary:")
-        print(results["pos_percentile"].describe().to_string())
+        print(f"\ntest_pos_percentile summary:")
+        print(results["test_pos_percentile"].describe().to_string())
 
 
 if __name__ == "__main__":
