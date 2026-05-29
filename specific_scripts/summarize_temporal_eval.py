@@ -40,9 +40,9 @@ ONT_ROOTS = {
 # ---------------------------------------------------------------------------
 
 def parse_obo(obo_file: str) -> dict:
-    """Return {term_id: {"parents": [...], "namespace": str}} for non-obsolete terms."""
+    """Return {term_id: {"parents": [...], "namespace": str, "name": str}} for non-obsolete terms."""
     terms = {}
-    current_id = current_namespace = None
+    current_id = current_namespace = current_name = None
     current_parents = []
     current_is_obsolete = in_term = False
 
@@ -52,19 +52,23 @@ def parse_obo(obo_file: str) -> dict:
             if line == "[Term]":
                 if in_term and current_id and not current_is_obsolete:
                     terms[current_id] = {"parents": current_parents,
-                                         "namespace": current_namespace}
+                                         "namespace": current_namespace,
+                                         "name": current_name or ""}
                 in_term = True
-                current_id = current_namespace = None
+                current_id = current_namespace = current_name = None
                 current_parents = []
                 current_is_obsolete = False
             elif line == "[Typedef]":
                 if in_term and current_id and not current_is_obsolete:
                     terms[current_id] = {"parents": current_parents,
-                                         "namespace": current_namespace}
+                                         "namespace": current_namespace,
+                                         "name": current_name or ""}
                 in_term = False
             elif in_term:
                 if line.startswith("id: "):
                     current_id = line[4:].strip()
+                elif line.startswith("name: "):
+                    current_name = line[6:].strip()
                 elif line.startswith("namespace: "):
                     current_namespace = line[11:].strip()
                 elif line.startswith("is_a: "):
@@ -75,7 +79,8 @@ def parse_obo(obo_file: str) -> dict:
                     current_is_obsolete = True
 
     if in_term and current_id and not current_is_obsolete:
-        terms[current_id] = {"parents": current_parents, "namespace": current_namespace}
+        terms[current_id] = {"parents": current_parents, "namespace": current_namespace,
+                              "name": current_name or ""}
     return terms
 
 
@@ -158,13 +163,14 @@ def main():
     # ------------------------------------------------------------------
     # OBO hierarchy metrics (optional)
     # ------------------------------------------------------------------
-    depths = ancestor_counts = None
+    depths = ancestor_counts = term_names = None
     if args.go_obo:
         logger.info(f"Parsing OBO: {args.go_obo}")
-        obo_terms = parse_obo(args.go_obo)
-        root_id   = ONT_ROOTS[args.ont]
-        depths    = compute_depths(obo_terms, root_id)
+        obo_terms    = parse_obo(args.go_obo)
+        root_id      = ONT_ROOTS[args.ont]
+        depths       = compute_depths(obo_terms, root_id)
         ancestor_counts = compute_ancestor_counts(obo_terms)
+        term_names   = {t: info["name"] for t, info in obo_terms.items()}
         logger.info(f"Computed depth and ancestor counts for {len(depths)} terms")
 
     # ------------------------------------------------------------------
@@ -185,6 +191,7 @@ def main():
 
         row = {
             "go_term":                go_id,
+            "go_term_name":           term_names.get(go_id, "") if term_names else "",
             "n_val_proteins":         len(grp),
             "n_test_neg":             len(neg_scores),
             "auc_val_vs_test_neg":    auc,
@@ -253,6 +260,8 @@ def main():
     # ------------------------------------------------------------------
     cols = ["go_term", "n_val_proteins", "auc_val_vs_test_neg",
             "pct_llr_positive", "median_test_pos_pct", "median_test_neg_pct"]
+    if term_names is not None:
+        cols = ["go_term", "go_term_name"] + cols[1:]
     if depths is not None:
         cols += ["depth", "n_ancestors"]
 
