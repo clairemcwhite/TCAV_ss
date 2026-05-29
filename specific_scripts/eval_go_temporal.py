@@ -264,15 +264,40 @@ def main():
     logger.info(f"GO base dirs ({len(go_base_dirs)}): {[str(d) for d in go_base_dirs]}")
 
     # ------------------------------------------------------------------
-    # Load gold standard
+    # Load gold standard (date filter applied here)
     # ------------------------------------------------------------------
     gold     = load_gold_standard(args.gold_standard, args.date_cutoff, args.min_n,
                                   filter_evidence=args.filter_evidence)
     go_terms = sorted(gold["go_term"].unique())
-    logger.info(f"Evaluating {len(go_terms)} GO terms")
+    logger.info(f"GO terms after date/min-n filter: {len(go_terms)}")
 
     # ------------------------------------------------------------------
-    # Build / load test protein embeddings (one pkl for all gold standard proteins)
+    # Pre-scan: keep only GO terms that have a CAV on disk
+    # ------------------------------------------------------------------
+    logger.info("Pre-scanning for available CAVs...")
+    valid_go_terms  = []
+    skipped_no_dir  = []
+    skipped_no_cav  = []
+    for go_id in go_terms:
+        go_dir = find_go_dir(go_id, go_base_dirs)
+        if go_dir is None:
+            skipped_no_dir.append(go_id)
+            continue
+        if not (go_dir / CAV_SUBDIR).is_dir():
+            skipped_no_cav.append(go_id)
+            continue
+        valid_go_terms.append(go_id)
+
+    logger.info(f"  {len(valid_go_terms)} GO terms have CAVs | "
+                f"{len(skipped_no_dir)} no directory | "
+                f"{len(skipped_no_cav)} no CAV dir")
+
+    gold     = gold[gold["go_term"].isin(valid_go_terms)].copy()
+    go_terms = valid_go_terms
+    logger.info(f"  Proteins to retrieve after CAV filter: {gold['protein_id'].nunique()}")
+
+    # ------------------------------------------------------------------
+    # Build / load test protein embeddings (only for proteins in evaluable terms)
     # ------------------------------------------------------------------
     test_proteins = sorted(gold["protein_id"].unique())
     test_span     = eval_embed_dir / "test_proteins.span"
@@ -313,22 +338,11 @@ def main():
             logger.warning(f"Could not read existing output file: {e}")
 
     header_written = out_file.exists()
-    skipped_no_dir = []
-    skipped_no_cav = []
     n_written = 0
 
     for go_id in go_terms:
-        go_dir = find_go_dir(go_id, go_base_dirs)
-        if go_dir is None:
-            logger.warning(f"{go_id}: no directory found — skipping")
-            skipped_no_dir.append(go_id)
-            continue
-
+        go_dir  = find_go_dir(go_id, go_base_dirs)
         cav_dir = go_dir / CAV_SUBDIR
-        if not cav_dir.is_dir():
-            logger.warning(f"{go_id}: CAV dir missing ({cav_dir}) — skipping")
-            skipped_no_cav.append(go_id)
-            continue
 
         test_proteins_for_term = gold[gold["go_term"] == go_id]["protein_id"].tolist()
         remaining = [p for p in test_proteins_for_term if (go_id, p) not in completed_pairs]
