@@ -163,6 +163,12 @@ def load_gold_standard(path: str, date_cutoff: int, min_n: int,
     df = pd.read_csv(path, sep="\t", dtype=str, header=None, names=COL_NAMES,
                      comment="!")
 
+    # Keep only UniProtKB entries — other DBs (e.g. IntAct CPX-XXXX) can't be fetched via UniProt
+    before = len(df)
+    df = df[df["DB"] == "UniProtKB"].copy()
+    logger.info(f"UniProtKB filter: {before} → {len(df)} rows "
+                f"(dropped {before - len(df)} non-UniProtKB entries)")
+
     if filter_evidence:
         before = len(df)
         df = df[df["Evidence_Code"].isin(DIRECT_ASSAY_CODES)].copy()
@@ -175,9 +181,15 @@ def load_gold_standard(path: str, date_cutoff: int, min_n: int,
     df = df.rename(columns={"DB_Object_ID": "protein_id", "GO_ID": "go_term"})
     df = df[["protein_id", "go_term"]].drop_duplicates()
 
-    # GPAD 2.0 stores protein IDs as CURIEs e.g. "UniProtKB:A0A021WW32".
-    # Strip the "DB:" prefix so retrieve_fasta.py gets bare accessions.
-    df["protein_id"] = df["protein_id"].str.split(":").str[-1]
+    # Normalise accessions to bare UniProt format:
+    #   "UniProtKB:P0C6Y4-PRO_0000037376" → "P0C6Y4"
+    # Strip optional "DB:" prefix, then strip isoform/chain suffix after "-"
+    # (standard UniProt accessions never contain "-").
+    df["protein_id"] = (
+        df["protein_id"]
+        .str.split(":").str[-1]   # drop "UniProtKB:" prefix if present
+        .str.split("-").str[0]    # drop "-PRO_XXXXX" / "-2" isoform suffixes
+    )
 
     # Keep only GO terms with >= min_n unique proteins
     counts = df.groupby("go_term")["protein_id"].nunique()
