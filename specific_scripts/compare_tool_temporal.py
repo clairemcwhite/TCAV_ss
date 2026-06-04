@@ -253,16 +253,14 @@ def main():
     print(f"\n--- Tool AUC distribution ---")
     print(valid["tool_auc_0fill_neg"].describe().to_string())
 
-    # Display columns for tables
-    name_col   = ["go_term_name"] if "go_term_name" in compare.columns else []
-    depth_cols = ["depth", "n_ancestors"] if "depth" in compare.columns else []
-    display = (
-        ["go_term"] + name_col +
-        ["n_val_proteins", "auc_val_vs_test_neg", "tool_auc_0fill_neg",
+    # Display columns for tables — only keep those present in the merged DataFrame
+    wanted = (
+        ["go_term", "go_term_name", "n_val_proteins",
+         "auc_val_vs_test_neg", "tool_auc_0fill_neg",
          "auc_diff_cav_minus_tool", "tool_recall_at_threshold",
-         "spearman_r_cav_vs_tool"] +
-        depth_cols
+         "spearman_r_cav_vs_tool", "depth", "n_ancestors"]
     )
+    display = [c for c in wanted if c in compare.columns]
 
     print(f"\n--- Top 10 GO terms by CAV AUC ---")
     print(compare.head(10)[display].to_string(index=False))
