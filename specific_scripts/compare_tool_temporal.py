@@ -209,7 +209,11 @@ def main():
     term_df = pd.DataFrame(rows)
 
     # Merge with per-term summary (adds CAV AUC, go_term_name, depth, etc.)
-    compare = summary.merge(term_df, on="go_term", how="left")
+    # Drop n_val_proteins from term_df — summary already has it
+    compare = summary.merge(
+        term_df.drop(columns=["n_val_proteins", "n_test_neg"], errors="ignore"),
+        on="go_term", how="left",
+    )
     compare["auc_diff_cav_minus_tool"] = (
         compare["auc_val_vs_test_neg"] - compare["tool_auc_0fill_neg"]
     )
