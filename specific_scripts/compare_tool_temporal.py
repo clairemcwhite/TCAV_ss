@@ -569,7 +569,54 @@ def make_figures(compare: pd.DataFrame, merged: pd.DataFrame, out_dir: Path) -> 
         logger.info(f"Saved {p}")
 
     # ------------------------------------------------------------------
-    # 10 & 11.  1-D KDE split by tool-predicted vs tool-silent
+    # 10.  Filled 2-D KDE: LLR vs tool score only
+    # ------------------------------------------------------------------
+    from matplotlib.colors import LinearSegmentedColormap
+
+    y_vals_llr = merged["llr"].values.astype(float)
+    linthresh   = max(1.0, float(np.percentile(np.abs(y_vals_llr[y_vals_llr != 0]), 10)))
+    y_plot_llr  = symlog_transform(y_vals_llr, linthresh)
+    tick_pos_llr, tick_labels_llr = symlog_ticks(linthresh, y_vals_llr)
+    hline_llr   = symlog_transform(np.array([0.0]), linthresh)[0]
+
+    # Colormap: background yellow → dark blue
+    yl_to_blue = LinearSegmentedColormap.from_list(
+        "yl_blue", ["#fef9c3", "#d0e8f5", "#2166ac", "#0a1f44"], N=256
+    )
+
+    fig, ax = plt.subplots(figsize=(5, 5))
+    ax.set_facecolor("#fef9c3")
+
+    try:
+        kde2d = spstats.gaussian_kde(
+            np.vstack([tool_score, y_plot_llr]), bw_method="scott"
+        )
+        xg = np.linspace(tool_score.min(), tool_score.max(), 120)
+        yg = np.linspace(y_plot_llr.min(), y_plot_llr.max(), 120)
+        Xg, Yg = np.meshgrid(xg, yg)
+        Zg = kde2d(np.vstack([Xg.ravel(), Yg.ravel()])).reshape(Xg.shape)
+        ax.contourf(Xg, Yg, Zg, levels=12, cmap=yl_to_blue, zorder=1)
+        ax.contour( Xg, Yg, Zg, levels=12, colors="white",
+                    alpha=0.25, linewidths=0.5, zorder=2)
+    except Exception as e:
+        logger.warning(f"Filled KDE failed: {e}")
+
+    ax.axvline(0,        color="0.4", lw=0.8, ls="--", zorder=3)
+    ax.axhline(hline_llr, color="0.4", lw=0.8, ls="--", zorder=3)
+    ax.set_yticks(tick_pos_llr)
+    ax.set_yticklabels(tick_labels_llr)
+    ax.set_xlabel("Tool score")
+    ax.set_ylabel("Log-likelihood ratio (LLR)  (symlog scale)")
+    ax.set_title(f"Per-protein: LLR vs tool score\n"
+                 f"(n={len(y_vals_llr)} validation pairs, filled KDE)")
+    fig.tight_layout()
+    p = out_dir / "fig_protein_llr_vs_tool_filled_kde.pdf"
+    fig.savefig(p)
+    plt.close(fig)
+    logger.info(f"Saved {p}")
+
+    # ------------------------------------------------------------------
+    # 11 & 12.  1-D KDE split by tool-predicted vs tool-silent
     #           Shows distribution of y-variable for each group separately
     # ------------------------------------------------------------------
     for y_col, y_label, fname in [
