@@ -502,17 +502,16 @@ def make_figures(compare: pd.DataFrame, merged: pd.DataFrame, out_dir: Path) -> 
         return np.sign(vals) * np.log1p(np.abs(vals) / linthresh)
 
     def symlog_ticks(linthresh: float, raw_vals: np.ndarray):
-        """Return (transformed_positions, labels) for a readable symlog y-axis."""
+        """Return (transformed_positions, labels) using clean powers of 10."""
         mag = max(np.abs(raw_vals).max(), linthresh)
-        # Pick ticks at 0, ±linthresh, and round powers of 10 above linthresh
-        pos_ticks = [0, linthresh]
-        v = linthresh * 10
+        pos_ticks = [0]
+        v = 1.0
         while v <= mag * 1.05:
             pos_ticks.append(v)
             v *= 10
         raw_ticks = sorted({-t for t in pos_ticks if t != 0} | set(pos_ticks))
         transformed = [symlog_transform(np.array([t]), linthresh)[0] for t in raw_ticks]
-        labels = [f"{int(t)}" if t == int(t) else f"{t:.1f}" for t in raw_ticks]
+        labels = ["0" if t == 0 else str(int(t)) for t in raw_ticks]
         return transformed, labels
 
     for y_col, y_label, fname in [
@@ -534,7 +533,7 @@ def make_figures(compare: pd.DataFrame, merged: pd.DataFrame, out_dir: Path) -> 
             hline_y      = 0.0
 
         fig, ax = plt.subplots(figsize=(5, 5))
-        hb = ax.hexbin(tool_score, y_plot, gridsize=40, cmap="Blues",
+        hb = ax.hexbin(tool_score, y_plot, gridsize=40, cmap="Greys",
                        mincnt=1, linewidths=0.2)
         fig.colorbar(hb, ax=ax, label="Count")
         ax.axvline(0,       color="0.5", lw=0.8, ls="--", zorder=0)
