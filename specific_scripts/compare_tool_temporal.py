@@ -591,13 +591,17 @@ def make_figures(compare: pd.DataFrame, merged: pd.DataFrame, out_dir: Path) -> 
         kde2d = spstats.gaussian_kde(
             np.vstack([tool_score, y_plot_llr]), bw_method="scott"
         )
-        xg = np.linspace(tool_score.min(), tool_score.max(), 120)
-        yg = np.linspace(y_plot_llr.min(), y_plot_llr.max(), 120)
+        xg = np.linspace(tool_score.min(), tool_score.max(), 150)
+        yg = np.linspace(y_plot_llr.min(), y_plot_llr.max(), 150)
         Xg, Yg = np.meshgrid(xg, yg)
         Zg = kde2d(np.vstack([Xg.ravel(), Yg.ravel()])).reshape(Xg.shape)
-        ax.contourf(Xg, Yg, Zg, levels=12, cmap=yl_to_blue, zorder=1)
-        ax.contour( Xg, Yg, Zg, levels=12, colors="white",
-                    alpha=0.25, linewidths=0.5, zorder=2)
+        # Log-spaced levels: more bands in sparse regions so rare cases are visible
+        z_min = float(Zg[Zg > 0].min())
+        z_max = float(Zg.max())
+        levels = np.logspace(np.log10(z_min), np.log10(z_max), 20)
+        ax.contourf(Xg, Yg, Zg, levels=levels, cmap=yl_to_blue, zorder=1)
+        ax.contour( Xg, Yg, Zg, levels=levels, colors="white",
+                    alpha=0.2, linewidths=0.4, zorder=2)
     except Exception as e:
         logger.warning(f"Filled KDE failed: {e}")
 
