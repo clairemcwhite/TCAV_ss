@@ -36,6 +36,11 @@ import argparse
 import logging
 from pathlib import Path
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
 from scipy import stats as spstats
@@ -173,8 +178,8 @@ def main():
         n_nonzero = int((val_tool > 0).sum())
         recall    = float(n_nonzero / len(grp)) if len(grp) else np.nan
 
-        # Spearman per term (only meaningful when ≥3 pairs)
-        if len(grp) >= 3:
+        # Spearman per term (only meaningful when ≥3 pairs and tool has variance)
+        if len(grp) >= 3 and val_tool.std() > 0:
             r_term, p_term = spstats.spearmanr(val_cav, val_tool)
         else:
             r_term, p_term = np.nan, np.nan
@@ -267,6 +272,171 @@ def main():
 
     print(f"\n--- GO terms where tool most outperforms CAV ---")
     print(compare.nsmallest(10, "auc_diff_cav_minus_tool")[display].to_string(index=False))
+
+    make_figures(compare, out_dir)
+
+
+# ---------------------------------------------------------------------------
+# Figures  (one PDF per plot)
+# ---------------------------------------------------------------------------
+
+RCPARAMS = {
+    "font.size":        10,
+    "axes.labelsize":   11,
+    "axes.titlesize":   11,
+    "legend.fontsize":   9,
+    "figure.dpi":       150,
+}
+
+def _scatter_base(ax, tool_auc, cav_auc):
+    """Draw diagonal reference line and set square equal-aspect limits."""
+    lo = min(tool_auc.min(), cav_auc.min()) - 0.04
+    hi = 1.03
+    diag = np.linspace(lo, hi, 200)
+    ax.plot(diag, diag, "--", color="0.6", lw=1, zorder=0)
+    ax.set_xlim(lo, hi)
+    ax.set_ylim(lo, hi)
+    ax.set_aspect("equal")
+    ax.set_xlabel("Tool AUC (test negatives scored 0)")
+    ax.set_ylabel("CAV AUC")
+
+
+def make_figures(compare: pd.DataFrame, out_dir: Path) -> None:
+    plt.rcParams.update(RCPARAMS)
+
+    valid = compare.dropna(subset=["auc_val_vs_test_neg", "tool_auc_0fill_neg"]).copy()
+    cav_auc  = valid["auc_val_vs_test_neg"].values
+    tool_auc = valid["tool_auc_0fill_neg"].values
+    n        = len(valid)
+
+    # ------------------------------------------------------------------
+    # 1. Scatter — coloured by tool recall at threshold
+    # ------------------------------------------------------------------
+    fig, ax = plt.subplots(figsize=(5, 5))
+    recall = valid["tool_recall_at_threshold"].values
+    sc = ax.scatter(tool_auc, cav_auc, c=recall, cmap="viridis",
+                    s=35, alpha=0.85, linewidths=0.4, edgecolors="k", zorder=2)
+    _scatter_base(ax, tool_auc, cav_auc)
+    cb = fig.colorbar(sc, ax=ax, fraction=0.046, pad=0.04)
+    cb.set_label("Tool recall at threshold")
+    ax.set_title(f"CAV vs tool AUC per GO term  (n={n})")
+    fig.tight_layout()
+    p = out_dir / "fig_scatter_auc_recall.pdf"
+    fig.savefig(p)
+    plt.close(fig)
+    logger.info(f"Saved {p}")
+
+    # ------------------------------------------------------------------
+    # 2. Scatter — coloured by GO depth  (skipped if depth not present)
+    # ------------------------------------------------------------------
+    if "depth" in valid.columns and valid["depth"].notna().any():
+        dv = valid.dropna(subset=["depth"])
+        fig, ax = plt.subplots(figsize=(5, 5))
+        sc = ax.scatter(dv["tool_auc_0fill_neg"], dv["auc_val_vs_test_neg"],
+                        c=dv["depth"], cmap="RdYlBu_r",
+                        s=35, alpha=0.85, linewidths=0.4, edgecolors="k", zorder=2)
+        _scatter_base(ax, dv["tool_auc_0fill_neg"].values, dv["auc_val_vs_test_neg"].values)
+        cb = fig.colorbar(sc, ax=ax, fraction=0.046, pad=0.04)
+        cb.set_label("GO term depth")
+        ax.set_title(f"CAV vs tool AUC per GO term  (n={len(dv)})")
+        fig.tight_layout()
+        p = out_dir / "fig_scatter_auc_depth.pdf"
+        fig.savefig(p)
+        plt.close(fig)
+        logger.info(f"Saved {p}")
+
+    # ------------------------------------------------------------------
+    # 3. Scatter — dot size proportional to number of validation proteins
+    # ------------------------------------------------------------------
+    nval = valid["n_val_proteins"].values
+    size_min, size_max = 20, 200
+    nval_lo, nval_hi   = nval.min(), nval.max()
+    if nval_hi > nval_lo:
+        sizes = size_min + (size_max - size_min) * (nval - nval_lo) / (nval_hi - nval_lo)
+    else:
+        sizes = np.full(len(nval), (size_min + size_max) / 2)
+
+    fig, ax = plt.subplots(figsize=(5, 5))
+    ax.scatter(tool_auc, cav_auc, s=sizes, alpha=0.65,
+               color="steelblue", linewidths=0.4, edgecolors="k", zorder=2)
+    _scatter_base(ax, tool_auc, cav_auc)
+
+    # Size legend: pick ~3 representative values
+    legend_ns = sorted({nval_lo, int(np.median(nval)), nval_hi})
+    legend_handles = []
+    for nv in legend_ns:
+        s = size_min + (size_max - size_min) * (nv - nval_lo) / max(nval_hi - nval_lo, 1)
+        legend_handles.append(
+            Line2D([0], [0], marker="o", color="w", markerfacecolor="steelblue",
+                   markeredgecolor="k", markeredgewidth=0.4,
+                   markersize=(s / np.pi) ** 0.5 * 2, label=f"n = {int(nv)}")
+        )
+    ax.legend(handles=legend_handles, title="Val proteins", frameon=False,
+              loc="upper left", fontsize=8)
+    ax.set_title(f"CAV vs tool AUC per GO term  (n={n})")
+    fig.tight_layout()
+    p = out_dir / "fig_scatter_auc_nval.pdf"
+    fig.savefig(p)
+    plt.close(fig)
+    logger.info(f"Saved {p}")
+
+    # ------------------------------------------------------------------
+    # 4. Paired KDE — AUC distribution for CAV vs tool
+    # ------------------------------------------------------------------
+    fig, ax = plt.subplots(figsize=(6, 4))
+    for values, label, color in [
+        (cav_auc,  "CAV",           "#2166ac"),
+        (tool_auc, "External tool", "#d6604d"),
+    ]:
+        kde   = spstats.gaussian_kde(values, bw_method="scott")
+        x_grid = np.linspace(0.2, 1.05, 300)
+        y_kde  = kde(x_grid)
+        ax.plot(x_grid, y_kde, lw=2, color=color, label=label)
+        ax.fill_between(x_grid, y_kde, alpha=0.15, color=color)
+        ax.axvline(float(np.mean(values)), lw=1.2, ls="--", color=color)
+
+    ax.set_xlabel("AUC")
+    ax.set_ylabel("Density")
+    ax.set_title(f"AUC distribution across {n} GO terms")
+    ax.legend(frameon=False)
+    ax.set_xlim(0.2, 1.05)
+    ax.set_ylim(bottom=0)
+    fig.tight_layout()
+    p = out_dir / "fig_auc_distributions.pdf"
+    fig.savefig(p)
+    plt.close(fig)
+    logger.info(f"Saved {p}")
+
+    # ------------------------------------------------------------------
+    # 5. Violin — side-by-side AUC distributions
+    # ------------------------------------------------------------------
+    fig, ax = plt.subplots(figsize=(4, 5))
+    parts = ax.violinplot([cav_auc, tool_auc], positions=[1, 2],
+                          showmedians=True, showextrema=False)
+    colors = ["#2166ac", "#d6604d"]
+    for pc, color in zip(parts["bodies"], colors):
+        pc.set_facecolor(color)
+        pc.set_alpha(0.7)
+    parts["cmedians"].set_color("k")
+    parts["cmedians"].set_linewidth(2)
+
+    # Overlay individual points as a strip
+    rng = np.random.default_rng(42)
+    for vals, pos, color in [(cav_auc, 1, "#2166ac"), (tool_auc, 2, "#d6604d")]:
+        jitter = rng.uniform(-0.08, 0.08, size=len(vals))
+        ax.scatter(pos + jitter, vals, s=12, color=color, alpha=0.5,
+                   linewidths=0.3, edgecolors="k", zorder=3)
+
+    ax.set_xticks([1, 2])
+    ax.set_xticklabels(["CAV", "External tool"])
+    ax.set_ylabel("AUC")
+    ax.set_ylim(0.2, 1.05)
+    ax.set_title(f"AUC distributions\n({n} GO terms)")
+    fig.tight_layout()
+    p = out_dir / "fig_auc_violin.pdf"
+    fig.savefig(p)
+    plt.close(fig)
+    logger.info(f"Saved {p}")
 
 
 if __name__ == "__main__":
