@@ -482,8 +482,83 @@ def make_figures(compare: pd.DataFrame, merged: pd.DataFrame, out_dir: Path) -> 
         ax.set_ylabel(y_label)
         ax.set_title(f"Per-protein: {y_label} vs tool score\n"
                      f"(n={len(y_vals)} validation pairs)")
+        if y_col == "llr":
+            linthresh = max(1.0, float(np.percentile(np.abs(y_vals[y_vals != 0]), 10)))
+            ax.set_yscale("symlog", linthresh=linthresh)
+            ax.set_ylabel(f"{y_label}  (symlog scale)")
         ax.legend(handles=legend_handles_pt, frameon=False, fontsize=8)
 
+        fig.tight_layout()
+        p = out_dir / fname
+        fig.savefig(p)
+        plt.close(fig)
+        logger.info(f"Saved {p}")
+
+    # ------------------------------------------------------------------
+    # 8 & 9.  2-D hexbin density versions of the same protein-level plots
+    # ------------------------------------------------------------------
+    for y_col, y_label, fname in [
+        ("val_cav_score", "CAV score",             "fig_protein_cav_vs_tool_hexbin.pdf"),
+        ("llr",           "Log-likelihood ratio (LLR)", "fig_protein_llr_vs_tool_hexbin.pdf"),
+    ]:
+        y_vals = merged[y_col].values.astype(float)
+
+        fig, ax = plt.subplots(figsize=(5, 5))
+        hb = ax.hexbin(tool_score, y_vals, gridsize=40, cmap="Blues",
+                       mincnt=1, linewidths=0.2)
+        fig.colorbar(hb, ax=ax, label="Count")
+        ax.axvline(0, color="0.5", lw=0.8, ls="--", zorder=0)
+        ax.axhline(0, color="0.5", lw=0.8, ls="--", zorder=0)
+        ax.set_xlabel("Tool score")
+        ax.set_ylabel(y_label)
+        ax.set_title(f"Per-protein: {y_label} vs tool score\n"
+                     f"(n={len(y_vals)} validation pairs, 2-D density)")
+        if y_col == "llr":
+            linthresh = max(1.0, float(np.percentile(np.abs(y_vals[y_vals != 0]), 10)))
+            ax.set_yscale("symlog", linthresh=linthresh)
+            ax.set_ylabel(f"{y_label}  (symlog scale)")
+        fig.tight_layout()
+        p = out_dir / fname
+        fig.savefig(p)
+        plt.close(fig)
+        logger.info(f"Saved {p}")
+
+    # ------------------------------------------------------------------
+    # 10 & 11.  1-D KDE split by tool-predicted vs tool-silent
+    #           Shows distribution of y-variable for each group separately
+    # ------------------------------------------------------------------
+    for y_col, y_label, fname in [
+        ("val_cav_score", "CAV score",             "fig_protein_cav_split_kde.pdf"),
+        ("llr",           "Log-likelihood ratio (LLR)", "fig_protein_llr_split_kde.pdf"),
+    ]:
+        y_vals = merged[y_col].values.astype(float)
+
+        fig, ax = plt.subplots(figsize=(6, 4))
+        for mask, label, color in [
+            (predicted,  f"Tool predicted  (n={predicted.sum()})",  "#2166ac"),
+            (~predicted, f"Tool silent  (n={(~predicted).sum()})",  "#bbbbbb"),
+        ]:
+            vals = y_vals[mask]
+            if len(vals) < 3:
+                continue
+            if y_col == "llr":
+                # Clip extreme outliers for KDE stability (plot range only)
+                lo, hi = np.percentile(vals, 1), np.percentile(vals, 99)
+                x_grid = np.linspace(lo, hi, 400)
+            else:
+                x_grid = np.linspace(vals.min() - 0.05, vals.max() + 0.05, 400)
+            kde   = spstats.gaussian_kde(vals, bw_method="scott")
+            y_kde = kde(x_grid)
+            ax.plot(x_grid, y_kde, lw=2, color=color, label=label)
+            ax.fill_between(x_grid, y_kde, alpha=0.2, color=color)
+            ax.axvline(float(np.median(vals)), lw=1.2, ls="--", color=color)
+
+        ax.axvline(0, color="0.5", lw=0.8, ls=":", zorder=0)
+        ax.set_xlabel(y_label)
+        ax.set_ylabel("Density")
+        ax.set_title(f"Distribution of {y_label}\nby tool prediction status")
+        ax.legend(frameon=False)
+        ax.set_ylim(bottom=0)
         fig.tight_layout()
         p = out_dir / fname
         fig.savefig(p)
