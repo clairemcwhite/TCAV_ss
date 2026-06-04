@@ -534,7 +534,7 @@ def make_figures(compare: pd.DataFrame, merged: pd.DataFrame, out_dir: Path) -> 
 
         fig, ax = plt.subplots(figsize=(5, 5))
         ax.set_facecolor("#fef9c3")
-        hb = ax.hexbin(tool_score, y_plot, gridsize=20, cmap="Blues",
+        hb = ax.hexbin(tool_score, y_plot, gridsize=30, cmap="Blues",
                        mincnt=1, linewidths=0.2)
         fig.colorbar(hb, ax=ax, label="Count")
         ax.axvline(0,       color="0.5", lw=0.8, ls="--", zorder=0)
