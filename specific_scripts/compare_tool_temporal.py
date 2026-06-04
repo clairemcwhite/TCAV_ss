@@ -497,26 +497,55 @@ def make_figures(compare: pd.DataFrame, merged: pd.DataFrame, out_dir: Path) -> 
     # ------------------------------------------------------------------
     # 8 & 9.  2-D hexbin density versions of the same protein-level plots
     # ------------------------------------------------------------------
+    def symlog_transform(vals: np.ndarray, linthresh: float) -> np.ndarray:
+        """Map values to symlog space so hexbin bins are uniform."""
+        return np.sign(vals) * np.log1p(np.abs(vals) / linthresh)
+
+    def symlog_ticks(linthresh: float, raw_vals: np.ndarray):
+        """Return (transformed_positions, labels) for a readable symlog y-axis."""
+        mag = max(np.abs(raw_vals).max(), linthresh)
+        # Pick ticks at 0, ±linthresh, and round powers of 10 above linthresh
+        pos_ticks = [0, linthresh]
+        v = linthresh * 10
+        while v <= mag * 1.05:
+            pos_ticks.append(v)
+            v *= 10
+        raw_ticks = sorted({-t for t in pos_ticks if t != 0} | set(pos_ticks))
+        transformed = [symlog_transform(np.array([t]), linthresh)[0] for t in raw_ticks]
+        labels = [f"{int(t)}" if t == int(t) else f"{t:.1f}" for t in raw_ticks]
+        return transformed, labels
+
     for y_col, y_label, fname in [
         ("val_cav_score", "CAV score",             "fig_protein_cav_vs_tool_hexbin.pdf"),
         ("llr",           "Log-likelihood ratio (LLR)", "fig_protein_llr_vs_tool_hexbin.pdf"),
     ]:
         y_vals = merged[y_col].values.astype(float)
 
-        fig, ax = plt.subplots(figsize=(5, 5))
-        hb = ax.hexbin(tool_score, y_vals, gridsize=40, cmap="Blues",
-                       mincnt=1, linewidths=0.2)
-        fig.colorbar(hb, ax=ax, label="Count")
-        ax.axvline(0, color="0.5", lw=0.8, ls="--", zorder=0)
-        ax.axhline(0, color="0.5", lw=0.8, ls="--", zorder=0)
-        ax.set_xlabel("Tool score")
-        ax.set_ylabel(y_label)
-        ax.set_title(f"Per-protein: {y_label} vs tool score\n"
-                     f"(n={len(y_vals)} validation pairs, 2-D density)")
         if y_col == "llr":
             linthresh = max(1.0, float(np.percentile(np.abs(y_vals[y_vals != 0]), 10)))
-            ax.set_yscale("symlog", linthresh=linthresh)
-            ax.set_ylabel(f"{y_label}  (symlog scale)")
+            y_plot    = symlog_transform(y_vals, linthresh)
+            tick_pos, tick_labels = symlog_ticks(linthresh, y_vals)
+            y_axis_label = f"{y_label}  (symlog scale)"
+            hline_y = symlog_transform(np.array([0.0]), linthresh)[0]
+        else:
+            y_plot       = y_vals
+            tick_pos     = tick_labels = None
+            y_axis_label = y_label
+            hline_y      = 0.0
+
+        fig, ax = plt.subplots(figsize=(5, 5))
+        hb = ax.hexbin(tool_score, y_plot, gridsize=40, cmap="Blues",
+                       mincnt=1, linewidths=0.2)
+        fig.colorbar(hb, ax=ax, label="Count")
+        ax.axvline(0,       color="0.5", lw=0.8, ls="--", zorder=0)
+        ax.axhline(hline_y, color="0.5", lw=0.8, ls="--", zorder=0)
+        if tick_pos is not None:
+            ax.set_yticks(tick_pos)
+            ax.set_yticklabels(tick_labels)
+        ax.set_xlabel("Tool score")
+        ax.set_ylabel(y_axis_label)
+        ax.set_title(f"Per-protein: {y_label} vs tool score\n"
+                     f"(n={len(y_vals)} validation pairs, 2-D density)")
         fig.tight_layout()
         p = out_dir / fname
         fig.savefig(p)
