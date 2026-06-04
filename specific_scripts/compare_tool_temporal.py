@@ -537,6 +537,22 @@ def make_figures(compare: pd.DataFrame, merged: pd.DataFrame, out_dir: Path) -> 
         hb = ax.hexbin(tool_score, y_plot, gridsize=30, cmap="Blues",
                        mincnt=1, linewidths=0.2)
         fig.colorbar(hb, ax=ax, label="Count")
+
+        # 2-D KDE contour overlay
+        try:
+            kde2d  = spstats.gaussian_kde(
+                np.vstack([tool_score, y_plot]),
+                bw_method="scott",
+            )
+            xg = np.linspace(tool_score.min(), tool_score.max(), 80)
+            yg = np.linspace(y_plot.min(),    y_plot.max(),    80)
+            Xg, Yg = np.meshgrid(xg, yg)
+            Zg = kde2d(np.vstack([Xg.ravel(), Yg.ravel()])).reshape(Xg.shape)
+            ax.contour(Xg, Yg, Zg, levels=5,
+                       colors="navy", alpha=0.55, linewidths=0.9, zorder=3)
+        except Exception as e:
+            logger.warning(f"KDE contour failed: {e}")
+
         ax.axvline(0,       color="0.5", lw=0.8, ls="--", zorder=0)
         ax.axhline(hline_y, color="0.5", lw=0.8, ls="--", zorder=0)
         if tick_pos is not None:
