@@ -275,7 +275,7 @@ def main():
     print(f"\n--- GO terms where tool most outperforms CAV ---")
     print(compare.nsmallest(10, "auc_diff_cav_minus_tool")[display].to_string(index=False))
 
-    make_figures(compare, out_dir)
+    make_figures(compare, merged, out_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -303,7 +303,7 @@ def _scatter_base(ax, tool_auc, cav_auc):
     ax.set_ylabel("CAV AUC")
 
 
-def make_figures(compare: pd.DataFrame, out_dir: Path) -> None:
+def make_figures(compare: pd.DataFrame, merged: pd.DataFrame, out_dir: Path) -> None:
     plt.rcParams.update(RCPARAMS)
 
     valid = compare.dropna(subset=["auc_val_vs_test_neg", "tool_auc_0fill_neg"]).copy()
@@ -439,6 +439,56 @@ def make_figures(compare: pd.DataFrame, out_dir: Path) -> None:
     fig.savefig(p)
     plt.close(fig)
     logger.info(f"Saved {p}")
+
+    # ------------------------------------------------------------------
+    # 6 & 7. Protein-level scatters: CAV score vs tool score,
+    #         LLR vs tool score  (one point per validation protein-GO pair)
+    # ------------------------------------------------------------------
+    tool_score  = merged["tool_score"].values
+    predicted   = tool_score > 0          # tool fired on this pair
+    colors_pt   = np.where(predicted, "#2166ac", "#bbbbbb")
+    alpha_pt    = np.where(predicted, 0.7, 0.35)
+
+    # legend proxies
+    legend_handles_pt = [
+        Line2D([0], [0], marker="o", color="w", markerfacecolor="#2166ac",
+               markeredgecolor="k", markeredgewidth=0.3, markersize=6,
+               label="Tool predicted"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor="#bbbbbb",
+               markeredgecolor="k", markeredgewidth=0.3, markersize=6,
+               label="Tool silent (score = 0)"),
+    ]
+
+    for y_col, y_label, fname in [
+        ("val_cav_score", "CAV score",         "fig_protein_cav_vs_tool.pdf"),
+        ("llr",           "Log-likelihood ratio (LLR)", "fig_protein_llr_vs_tool.pdf"),
+    ]:
+        y_vals = merged[y_col].values.astype(float)
+
+        fig, ax = plt.subplots(figsize=(5, 5))
+
+        # Plot silent (grey) first so predicted (blue) sits on top
+        for mask, c, a in [
+            (~predicted, "#bbbbbb", 0.35),
+            ( predicted, "#2166ac", 0.7),
+        ]:
+            ax.scatter(tool_score[mask], y_vals[mask],
+                       s=18, color=c, alpha=a,
+                       linewidths=0.3, edgecolors="k", zorder=2)
+
+        ax.axvline(0, color="0.7", lw=0.8, ls="--", zorder=0)
+        ax.axhline(0, color="0.7", lw=0.8, ls="--", zorder=0)
+        ax.set_xlabel("Tool score")
+        ax.set_ylabel(y_label)
+        ax.set_title(f"Per-protein: {y_label} vs tool score\n"
+                     f"(n={len(y_vals)} validation pairs)")
+        ax.legend(handles=legend_handles_pt, frameon=False, fontsize=8)
+
+        fig.tight_layout()
+        p = out_dir / fname
+        fig.savefig(p)
+        plt.close(fig)
+        logger.info(f"Saved {p}")
 
 
 if __name__ == "__main__":
