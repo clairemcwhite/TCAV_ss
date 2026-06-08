@@ -188,6 +188,11 @@ def main():
     parser.add_argument("--eval-embed-dir", default=None,
                         help="Directory for validation protein FASTA and PKL. "
                              "Defaults to --out-dir/eval_embeddings.")
+    parser.add_argument("--val-fasta", default=None,
+                        help="Pre-built FASTA for validation proteins. When provided, "
+                             "the retrieve step is skipped (use for non-UniProt IDs "
+                             "e.g. RefSeq). The FASTA from reformat_ec_goldstandard.py "
+                             "can be used directly here.")
     parser.add_argument("--min-n", type=int, default=3,
                         help="Min validation proteins per EC term (default: 3).")
     parser.add_argument("--retrieve-script",
@@ -265,15 +270,42 @@ def main():
     # Build / load validation protein embeddings
     # ------------------------------------------------------------------
     val_proteins = sorted(gold["protein_id"].unique())
-    val_span     = eval_embed_dir / "val_proteins.span"
-    if not val_span.exists():
-        val_span.write_text("\n".join(val_proteins) + "\n")
-        logger.info(f"Wrote validation span: {val_span} ({len(val_proteins)} proteins)")
 
     logger.info("Ensuring validation protein embeddings exist...")
-    val_pkl = ensure_fasta_and_pkl(
-        val_span, args.retrieve_script, args.embed_script, args.model
-    )
+    if args.val_fasta:
+        # Non-UniProt IDs (e.g. RefSeq): FASTA already provided, skip retrieve step
+        val_fasta = Path(args.val_fasta)
+        if not val_fasta.exists():
+            raise FileNotFoundError(f"--val-fasta not found: {val_fasta}")
+        val_pkl = Path(str(val_fasta) + ".pkl")
+        if not val_pkl.exists():
+            logger.info(f"  Embedding provided FASTA: {val_fasta.name}")
+            import subprocess, sys
+            subprocess.run(
+                [
+                    sys.executable, args.embed_script,
+                    "-f", str(val_fasta),
+                    "-o", str(val_pkl),
+                    "--get_sequence_embedding",
+                    "--strat", "mean",
+                    "-l", "-11",
+                    "-m", args.model,
+                    "-b", "1",
+                    "--max_length", "2048",
+                ],
+                check=True,
+            )
+        else:
+            logger.info(f"  PKL exists, skipping: {val_pkl.name}")
+    else:
+        # UniProt IDs: fetch FASTA then embed
+        val_span = eval_embed_dir / "val_proteins.span"
+        if not val_span.exists():
+            val_span.write_text("\n".join(val_proteins) + "\n")
+            logger.info(f"Wrote validation span: {val_span} ({len(val_proteins)} proteins)")
+        val_pkl = ensure_fasta_and_pkl(
+            val_span, args.retrieve_script, args.embed_script, args.model
+        )
     val_embs, val_ids = load_sequence_embeddings(str(val_pkl))
 
     # Build lookup handling both bare accessions and full FASTA-header IDs
