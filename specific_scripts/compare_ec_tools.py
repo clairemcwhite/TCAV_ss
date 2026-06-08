@@ -10,16 +10,14 @@ The tool prediction file has:
   - ec_number  : true EC number(s), comma-separated (gold standard)
   - one column per tool: predicted EC number(s), comma-separated; "-" = no prediction
 
-Matching is assessed at two levels:
-  - exact  : all 4 EC levels match  (4.2.3.158 == 4.2.3.158)
-  - level3 : first 3 levels match   (4.2.3.158 vs 4.2.3.x)
+Matching uses the truth's own specificity level:
+  - If the truth is '4.2.3' (3-level), a prediction of '4.2.3.158' gets credit.
+  - If the truth is '4.2.3.158' (4-level), the prediction must match all 4 levels.
 
-Wildcard predictions (4.2.3.-) are normalised to 3 levels for matching.
-Wildcard true labels (4.2.3.-) are also normalised; level3 is the max
-comparison level for those.
+Wildcard true labels (4.2.3.-) are normalised by stripping trailing '-' levels.
 
-If --cav-results is supplied, CAV recall is added at LLR > 0 and at
-configurable percentile thresholds.
+If --cav-results is supplied, CAV recall is added at LLR > 0 (configurable).
+All comparisons are restricted to (protein, EC) pairs covered by CAV.
 
 Usage
 -----
@@ -78,17 +76,6 @@ def parse_ec_field(field: str) -> list[str]:
     return [s.strip() for s in str(field).split(",") if s.strip() not in ("-", "")]
 
 
-def matches_at_level(predicted_field: str, true_field: str, level: int) -> bool:
-    """True if any predicted EC matches any true EC at the given level."""
-    preds = parse_ec_field(predicted_field)
-    trues = parse_ec_field(true_field)
-    if not preds or not trues:
-        return False
-    pred_norms = {ec_to_level(p, level) for p in preds} - {None}
-    true_norms = {ec_to_level(t, level) for t in trues} - {None}
-    return bool(pred_norms & true_norms)
-
-
 def matches_exact(predicted_field: str, true_field: str) -> bool:
     """Match at the truth's own specificity level.
 
@@ -124,7 +111,7 @@ def load_and_explode(csv_path: str) -> tuple[pd.DataFrame, list[str]]:
     """Read tool CSV, explode multi-EC true labels to one row per (protein, EC).
 
     Returns (long_df, tool_col_names).
-    long_df has columns: protein_id, true_ec, true_ec_norm, <tool cols...>
+    long_df has columns: protein_id, ec_number, true_ec_norm, <tool cols...>
     """
     df = pd.read_csv(csv_path, dtype=str).fillna("-")
     df = df.rename(columns={"id": "protein_id"})
@@ -155,14 +142,11 @@ def load_and_explode(csv_path: str) -> tuple[pd.DataFrame, list[str]]:
 # ---------------------------------------------------------------------------
 
 def compute_matches(df: pd.DataFrame, tool_cols: list[str]) -> pd.DataFrame:
-    """Add boolean match columns for each tool at exact and level-3."""
+    """Add boolean match columns for each tool."""
     for col in tool_cols:
         safe = col.replace("-", "_").replace(" ", "_")
-        df[f"{safe}__exact"]  = df.apply(
-            lambda r: matches_exact(r[col], r["ec_number"]), axis=1
-        )
-        df[f"{safe}__level3"] = df.apply(
-            lambda r: matches_at_level(r[col], r["ec_number"], 3), axis=1
+        df[f"{safe}__exact"]     = df.apply(
+            lambda r, c=col: matches_exact(r[c], r["ec_number"]), axis=1
         )
         df[f"{safe}__predicted"] = df[col].apply(predicted_anything)
     return df
@@ -176,22 +160,17 @@ def tool_summary(df: pd.DataFrame, tool_cols: list[str]) -> pd.DataFrame:
     rows = []
     n_total = len(df)
     for col in tool_cols:
-        safe = col.replace("-", "_").replace(" ", "_")
-        n_pred   = df[f"{safe}__predicted"].sum()
-        n_exact  = df[f"{safe}__exact"].sum()
-        n_level3 = df[f"{safe}__level3"].sum()
+        safe   = col.replace("-", "_").replace(" ", "_")
+        n_pred  = df[f"{safe}__predicted"].sum()
+        n_exact = df[f"{safe}__exact"].sum()
         rows.append({
-            "tool":                  col,
-            "n_pairs":               n_total,
-            "n_predicted":           int(n_pred),
-            "coverage":              round(n_pred / n_total, 4),
-            "n_exact_match":         int(n_exact),
-            "recall_exact":          round(n_exact / n_total, 4),
-            "n_level3_match":        int(n_level3),
-            "recall_level3":         round(n_level3 / n_total, 4),
-            # Precision among predictions made
-            "precision_exact":       round(n_exact / n_pred, 4) if n_pred else float("nan"),
-            "precision_level3":      round(n_level3 / n_pred, 4) if n_pred else float("nan"),
+            "tool":            col,
+            "n_pairs":         n_total,
+            "n_predicted":     int(n_pred),
+            "coverage":        round(n_pred  / n_total, 4),
+            "n_exact_match":   int(n_exact),
+            "recall_exact":    round(n_exact / n_total, 4),
+            "precision_exact": round(n_exact / n_pred,  4) if n_pred else float("nan"),
         })
     return pd.DataFrame(rows).sort_values("recall_exact", ascending=False)
 
@@ -204,7 +183,6 @@ def add_cav_metrics(
     df: pd.DataFrame,
     cav_results_path: str,
     llr_threshold: float = 0.0,
-    percentile_threshold: float = 50.0,
 ) -> tuple[pd.DataFrame, dict]:
     """Join CAV eval results onto the per-pair DataFrame.
 
@@ -225,27 +203,21 @@ def add_cav_metrics(
     n_matched = merged["llr"].notna().sum()
     logger.info(f"CAV scores joined for {n_matched} / {len(merged)} pairs")
 
-    # Binary CAV predictions at thresholds
-    merged["cav__llr_positive"]     = merged["llr"] > llr_threshold
-    merged["cav__pct50_positive"]   = merged["test_pos_percentile"] > percentile_threshold
+    merged["cav__llr_positive"] = merged["llr"] > llr_threshold
 
-    n_total  = len(merged)
-    n_scored = int(merged["llr"].notna().sum())
-    n_exact_llr  = int(merged["cav__llr_positive"].sum())
-    n_exact_pct  = int(merged["cav__pct50_positive"].sum())
+    n_total   = len(merged)
+    n_scored  = int(merged["llr"].notna().sum())
+    n_exact   = int(merged["cav__llr_positive"].sum())
 
     cav_summary = {
-        "tool":              "CAV",
-        "n_pairs":           n_total,
-        "n_predicted":       n_scored,
-        "coverage":          round(n_scored / n_total, 4),
-        # "Exact" for CAV = LLR > threshold (positively aligned with pos distribution)
-        "n_exact_match":     n_exact_llr,
-        "recall_exact":      round(n_exact_llr / n_total, 4),
-        "n_level3_match":    n_exact_pct,
-        "recall_level3":     round(n_exact_pct / n_total, 4),
-        "precision_exact":   round(n_exact_llr / n_scored, 4) if n_scored else float("nan"),
-        "precision_level3":  round(n_exact_pct / n_scored, 4) if n_scored else float("nan"),
+        "tool":            "CAV",
+        "n_pairs":         n_total,
+        "n_predicted":     n_scored,
+        "coverage":        round(n_scored / n_total, 4),
+        "n_exact_match":   n_exact,
+        "recall_exact":    round(n_exact / n_total, 4),
+        "precision_exact": round(n_exact / n_scored, 4) if n_scored else float("nan"),
+        "note":            f"LLR>{llr_threshold}",
     }
 
     return merged, cav_summary
@@ -257,6 +229,7 @@ def add_cav_metrics(
 
 RCPARAMS = {"font.size": 9, "axes.labelsize": 10, "axes.titlesize": 10}
 
+
 def make_figures(summary: pd.DataFrame, out_dir: Path) -> None:
     plt.rcParams.update(RCPARAMS)
 
@@ -264,21 +237,26 @@ def make_figures(summary: pd.DataFrame, out_dir: Path) -> None:
     summary = summary.sort_values("recall_exact", ascending=True)
     tools   = summary["tool"].tolist()
     y       = np.arange(len(tools))
+    colors  = ["#d6604d" if t == "CAV" else "#2166ac" for t in tools]
 
     # ------------------------------------------------------------------
-    # 1. Horizontal bar: recall at exact and level-3
+    # 1. Horizontal bar: recall (exact)
     # ------------------------------------------------------------------
     fig, ax = plt.subplots(figsize=(7, max(4, len(tools) * 0.4)))
-    ax.barh(y - 0.2, summary["recall_level3"], height=0.35,
-            color="#aec6e8", label="3-level match")
-    ax.barh(y + 0.2, summary["recall_exact"],  height=0.35,
-            color="#2166ac", label="Exact match (4-level)")
+    ax.barh(y, summary["recall_exact"], color=colors, height=0.6)
     ax.set_yticks(y)
     ax.set_yticklabels(tools, fontsize=8)
     ax.set_xlabel("Recall  (fraction of gold-standard pairs)")
     ax.set_xlim(0, 1.05)
     ax.axvline(0.5, color="0.6", lw=0.8, ls="--")
-    ax.legend(frameon=False)
+
+    # Legend patches
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor="#2166ac", label="Other tools"),
+        Patch(facecolor="#d6604d", label="CAV (LLR > 0)"),
+    ]
+    ax.legend(handles=legend_elements, frameon=False)
     ax.set_title("EC prediction recall across tools")
     fig.tight_layout()
     p = out_dir / "fig_ec_tool_recall.pdf"
@@ -302,14 +280,14 @@ def make_figures(summary: pd.DataFrame, out_dir: Path) -> None:
             summary.loc[is_cav, "coverage"],
             summary.loc[is_cav, "recall_exact"],
             s=80, color="#d6604d", marker="*", linewidths=0.5, edgecolors="k",
-            label="CAV", zorder=3,
+            label="CAV (LLR > 0)", zorder=3,
         )
     for _, row in summary.iterrows():
         ax.annotate(row["tool"], (row["coverage"], row["recall_exact"]),
                     fontsize=6, xytext=(3, 2), textcoords="offset points")
     ax.plot([0, 1], [0, 1], "k--", lw=0.8, zorder=0)
     ax.set_xlabel("Coverage (fraction of pairs with any prediction)")
-    ax.set_ylabel("Recall (exact 4-level match)")
+    ax.set_ylabel("Recall (exact match)")
     ax.set_xlim(-0.02, 1.05)
     ax.set_ylim(-0.02, 1.05)
     ax.legend(frameon=False)
@@ -336,17 +314,18 @@ def main():
                         help="Output directory for results and figures.")
     parser.add_argument("--cav-results", default=None,
                         help="Path to eval_ec_results.tsv (from eval_ec.py). Optional.")
+    parser.add_argument("--exclude", default=None,
+                        help="Optional TSV with ec_number and protein_id columns to exclude "
+                             "(e.g. train/val overlap pairs).")
     parser.add_argument("--llr-threshold", type=float, default=0.0,
                         help="LLR threshold for CAV binary prediction (default: 0).")
-    parser.add_argument("--percentile-threshold", type=float, default=50.0,
-                        help="test_pos_percentile threshold for CAV (default: 50).")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------
-    # Load and compute matches
+    # Load predictions
     # ------------------------------------------------------------------
     df, tool_cols = load_and_explode(args.tool_predictions)
 
@@ -366,6 +345,15 @@ def main():
             f"with CAV coverage ({cav_pre['ec_number'].nunique()} EC terms)"
         )
 
+    if args.exclude:
+        excl = pd.read_csv(args.exclude, sep="\t")[["ec_number", "protein_id"]]
+        excl["_drop"] = True
+        n_before = len(df)
+        df = df.merge(excl, on=["ec_number", "protein_id"], how="left")
+        df = df[df["_drop"].isna()].drop(columns="_drop").reset_index(drop=True)
+        logger.info(f"Excluded {n_before - len(df)} pairs via --exclude; "
+                    f"{len(df)} pairs remain")
+
     df = compute_matches(df, tool_cols)
 
     # ------------------------------------------------------------------
@@ -380,12 +368,8 @@ def main():
         df, cav_row = add_cav_metrics(
             df, args.cav_results,
             llr_threshold=args.llr_threshold,
-            percentile_threshold=args.percentile_threshold,
         )
-        # Note column labels for CAV in summary
-        cav_df  = pd.DataFrame([cav_row])
-        cav_df["note"] = f"LLR>{args.llr_threshold} / pct>{args.percentile_threshold}"
-        summary = pd.concat([summary, cav_df], ignore_index=True)
+        summary = pd.concat([summary, pd.DataFrame([cav_row])], ignore_index=True)
 
     # ------------------------------------------------------------------
     # Save outputs
@@ -397,10 +381,10 @@ def main():
     detail_cols = ["protein_id", "ec_number", "true_ec_norm"]
     for col in tool_cols:
         safe = col.replace("-", "_").replace(" ", "_")
-        detail_cols += [f"{safe}__exact", f"{safe}__level3"]
+        detail_cols += [f"{safe}__exact"]
     if args.cav_results:
         detail_cols += ["llr", "val_cav_score", "test_pos_percentile",
-                        "cav__llr_positive", "cav__pct50_positive"]
+                        "test_neg_percentile", "cav__llr_positive"]
 
     detail_file = out_dir / "ec_tool_comparison_detail.tsv"
     df[[c for c in detail_cols if c in df.columns]].to_csv(
@@ -415,11 +399,10 @@ def main():
     print(f"EC tool comparison — {len(df)} (protein, EC) pairs")
     print(f"{'='*70}")
     display_cols = ["tool", "n_predicted", "coverage",
-                    "recall_exact", "recall_level3",
-                    "precision_exact", "precision_level3"]
+                    "recall_exact", "precision_exact"]
     if "note" in summary.columns:
         display_cols.append("note")
-    print(summary[display_cols].to_string(index=False))
+    print(summary[[c for c in display_cols if c in summary.columns]].to_string(index=False))
 
     make_figures(summary, out_dir)
 

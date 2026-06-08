@@ -50,12 +50,24 @@ def main():
                         help="Path to eval_ec_results.tsv.")
     parser.add_argument("--out-dir", required=True,
                         help="Directory containing {ec_cav_id}_test_neg_scores.tsv files.")
+    parser.add_argument("--exclude", default=None,
+                        help="Optional TSV with ec_number and protein_id columns to exclude "
+                             "(e.g. train/val overlap pairs).")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
     results = pd.read_csv(args.results, sep="\t")
     logger.info(f"Loaded {len(results)} protein-term pairs across "
                 f"{results['ec_number'].nunique()} EC terms")
+
+    if args.exclude:
+        excl = pd.read_csv(args.exclude, sep="\t")[["ec_number", "protein_id"]]
+        excl["_drop"] = True
+        before = len(results)
+        results = results.merge(excl, on=["ec_number", "protein_id"], how="left")
+        results = results[results["_drop"].isna()].drop(columns="_drop").reset_index(drop=True)
+        logger.info(f"Excluded {before - len(results)} pairs via --exclude; "
+                    f"{len(results)} pairs remain")
 
     # ------------------------------------------------------------------
     # Per-EC-term stats
