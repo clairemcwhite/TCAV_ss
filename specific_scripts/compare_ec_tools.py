@@ -349,6 +349,23 @@ def main():
     # Load and compute matches
     # ------------------------------------------------------------------
     df, tool_cols = load_and_explode(args.tool_predictions)
+
+    # ------------------------------------------------------------------
+    # Restrict to CAV-covered pairs (must happen before computing matches)
+    # ------------------------------------------------------------------
+    if args.cav_results:
+        cav_pre = pd.read_csv(args.cav_results, sep="\t")
+        cav_pre["true_ec_norm"] = cav_pre["ec_number"].apply(strip_wildcards)
+        cav_pairs = set(zip(cav_pre["protein_id"], cav_pre["true_ec_norm"]))
+        n_before = len(df)
+        df = df[df.apply(
+            lambda r: (r["protein_id"], r["true_ec_norm"]) in cav_pairs, axis=1
+        )].reset_index(drop=True)
+        logger.info(
+            f"Restricted from {n_before} to {len(df)} pairs "
+            f"with CAV coverage ({cav_pre['ec_number'].nunique()} EC terms)"
+        )
+
     df = compute_matches(df, tool_cols)
 
     # ------------------------------------------------------------------
