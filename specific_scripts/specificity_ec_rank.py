@@ -142,10 +142,15 @@ def main():
     # Build lookup: ec_cav_id → column index
     cav_id_to_col = {cid: i for i, cid in enumerate(cav_ids)}
 
+    # Build per-protein true EC set for fast lookup
+    protein_true_cavs = gold.groupby("protein_id")["ec_cav_id"].apply(set).to_dict()
+
     # ------------------------------------------------------------------
-    # Compute per-(protein, EC) rank
+    # Compute per-(protein, EC) rank  +  top-20 table
     # ------------------------------------------------------------------
-    rows = []
+    rows      = []
+    top20_rows = []
+
     for _, pair in gold.iterrows():
         protein_id = pair["protein_id"]
         ec_number  = pair["ec_number"]
@@ -179,6 +184,35 @@ def main():
     results_file = out_dir / "ec_specificity_ranks.tsv"
     results.to_csv(results_file, sep="\t", index=False, float_format="%.4f")
     logger.info(f"Saved rank results to {results_file}")
+
+    # ------------------------------------------------------------------
+    # Top-20 table: for each val protein, top 20 EC CAVs by score
+    # ------------------------------------------------------------------
+    top20_rows = []
+    seen_proteins = set()
+    for protein_id in gold["protein_id"].unique():
+        idx = id_to_idx.get(protein_id)
+        if idx is None:
+            continue
+        scores       = score_matrix[idx]
+        top20_cols   = np.argsort(scores)[::-1][:20]
+        true_cavs    = protein_true_cavs.get(protein_id, set())
+        for rank_i, col in enumerate(top20_cols, start=1):
+            ec_cav_id  = cav_ids[col]
+            ec_number  = ec_cav_id.replace("ecNo_", "").replace("-", ".")
+            top20_rows.append({
+                "protein_id":    protein_id,
+                "ec_cav_id":     ec_cav_id,
+                "ec_number":     ec_number,
+                "score":         float(scores[col]),
+                "true_positive": ec_cav_id in true_cavs,
+                "rank":          rank_i,
+            })
+
+    top20 = pd.DataFrame(top20_rows)
+    top20_file = out_dir / "ec_specificity_top20.tsv"
+    top20.to_csv(top20_file, sep="\t", index=False, float_format="%.4f")
+    logger.info(f"Saved top-20 table to {top20_file}")
 
     # ------------------------------------------------------------------
     # Summary
