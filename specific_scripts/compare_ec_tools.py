@@ -313,21 +313,9 @@ def make_figures(summary: pd.DataFrame, detail_df: pd.DataFrame, out_dir: Path) 
 
         fig, ax = plt.subplots(figsize=(6, 4))
         ax.plot(thresholds, recalls, color="#2166ac", lw=2)
-        ax.axvline(0, color="0.5", lw=0.8, ls="--", label="LLR = 0")
-        ax.axvline(1, color="0.5", lw=0.8, ls=":",  label="LLR = 1")
-
-        # Reference lines for full-coverage tools
-        ref_tools = plot_summary[plot_summary["tool"] != "CAV"]
-        for _, row in ref_tools.iterrows():
-            ax.axhline(row["recall_exact"], color="#aec6e8", lw=0.8, ls="--")
-            ax.text(thresholds[-1], row["recall_exact"],
-                    f" {row['tool']}", fontsize=6, va="center", color="#555555")
-
         ax.set_xlabel("LLR threshold")
         ax.set_ylabel("Recall  (fraction of val pairs above threshold)")
         ax.set_ylim(-0.02, 1.05)
-        ax.legend(frameon=False, fontsize=8)
-        ax.set_title("CAV recall vs LLR threshold")
         fig.tight_layout()
         p = out_dir / "fig_ec_recall_vs_llr.pdf"
         fig.savefig(p)
