@@ -230,34 +230,38 @@ def add_cav_metrics(
 RCPARAMS = {"font.size": 9, "axes.labelsize": 10, "axes.titlesize": 10}
 
 
-def make_figures(summary: pd.DataFrame, out_dir: Path) -> None:
+def make_figures(summary: pd.DataFrame, detail_df: pd.DataFrame, out_dir: Path) -> None:
     plt.rcParams.update(RCPARAMS)
-
-    # Sort by recall_exact for display
-    summary = summary.sort_values("recall_exact", ascending=True)
-    tools   = summary["tool"].tolist()
-    y       = np.arange(len(tools))
-    colors  = ["#d6604d" if t == "CAV" else "#2166ac" for t in tools]
+    from matplotlib.patches import Patch
 
     # ------------------------------------------------------------------
-    # 1. Horizontal bar: recall (exact)
+    # 1. Horizontal bar: recall (exact) — full-coverage tools only
     # ------------------------------------------------------------------
+    cav_row = summary[summary["tool"] == "CAV"]
+    n_cav   = int(cav_row["n_predicted"].iloc[0]) if len(cav_row) else None
+
+    plot_summary = summary.copy()
+    if n_cav is not None:
+        plot_summary = plot_summary[plot_summary["n_predicted"] == n_cav]
+
+    plot_summary = plot_summary.sort_values("recall_exact", ascending=True)
+    tools  = plot_summary["tool"].tolist()
+    y      = np.arange(len(tools))
+    colors = ["#d6604d" if t == "CAV" else "#2166ac" for t in tools]
+
     fig, ax = plt.subplots(figsize=(7, max(4, len(tools) * 0.4)))
-    ax.barh(y, summary["recall_exact"], color=colors, height=0.6)
+    ax.barh(y, plot_summary["recall_exact"], color=colors, height=0.6)
     ax.set_yticks(y)
     ax.set_yticklabels(tools, fontsize=8)
     ax.set_xlabel("Recall  (fraction of gold-standard pairs)")
     ax.set_xlim(0, 1.05)
     ax.axvline(0.5, color="0.6", lw=0.8, ls="--")
-
-    # Legend patches
-    from matplotlib.patches import Patch
     legend_elements = [
         Patch(facecolor="#2166ac", label="Other tools"),
         Patch(facecolor="#d6604d", label="CAV (LLR > 0)"),
     ]
     ax.legend(handles=legend_elements, frameon=False)
-    ax.set_title("EC prediction recall across tools")
+    ax.set_title("EC prediction recall across tools (full-coverage only)")
     fig.tight_layout()
     p = out_dir / "fig_ec_tool_recall.pdf"
     fig.savefig(p)
@@ -297,6 +301,40 @@ def make_figures(summary: pd.DataFrame, out_dir: Path) -> None:
     fig.savefig(p)
     plt.close(fig)
     logger.info(f"Saved {p}")
+
+    # ------------------------------------------------------------------
+    # 3. Recall vs LLR threshold curve
+    # ------------------------------------------------------------------
+    llr_vals = detail_df["llr"].dropna().values
+    if len(llr_vals) > 0:
+        n_total    = len(llr_vals)
+        thresholds = np.linspace(llr_vals.min() - 0.5, llr_vals.max() + 0.5, 300)
+        recalls    = [(llr_vals > t).sum() / n_total for t in thresholds]
+
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.plot(thresholds, recalls, color="#2166ac", lw=2)
+        ax.axvline(0, color="0.5", lw=0.8, ls="--", label="LLR = 0")
+        ax.axvline(1, color="0.5", lw=0.8, ls=":",  label="LLR = 1")
+
+        # Reference lines for full-coverage tools
+        ref_tools = plot_summary[plot_summary["tool"] != "CAV"]
+        for _, row in ref_tools.iterrows():
+            ax.axhline(row["recall_exact"], color="#aec6e8", lw=0.8, ls="--")
+            ax.text(thresholds[-1], row["recall_exact"],
+                    f" {row['tool']}", fontsize=6, va="center", color="#555555")
+
+        ax.set_xlabel("LLR threshold")
+        ax.set_ylabel("Recall  (fraction of val pairs above threshold)")
+        ax.set_ylim(-0.02, 1.05)
+        ax.legend(frameon=False, fontsize=8)
+        ax.set_title("CAV recall vs LLR threshold")
+        fig.tight_layout()
+        p = out_dir / "fig_ec_recall_vs_llr.pdf"
+        fig.savefig(p)
+        plt.close(fig)
+        logger.info(f"Saved {p}")
+    else:
+        logger.warning("No LLR values available — skipping recall-vs-threshold figure")
 
 
 # ---------------------------------------------------------------------------
@@ -354,6 +392,15 @@ def main():
         logger.info(f"Excluded {n_before - len(df)} pairs via --exclude; "
                     f"{len(df)} pairs remain")
 
+    if len(df) == 0:
+        logger.error(
+            "No (protein, EC) pairs remain after filtering. "
+            "This usually means protein IDs in the tool predictions CSV do not match "
+            "those in the CAV results TSV. "
+            "Check ID formats — e.g. 'sp|Q15185|GENE_HUMAN' vs 'Q15185'."
+        )
+        raise SystemExit(1)
+
     df = compute_matches(df, tool_cols)
 
     # ------------------------------------------------------------------
@@ -404,7 +451,7 @@ def main():
         display_cols.append("note")
     print(summary[[c for c in display_cols if c in summary.columns]].to_string(index=False))
 
-    make_figures(summary, out_dir)
+    make_figures(summary, df, out_dir)
 
 
 if __name__ == "__main__":
