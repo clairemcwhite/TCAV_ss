@@ -108,6 +108,35 @@ def load_tool_predictions(csv_path: str, go_terms_needed: set) -> pd.DataFrame:
     return long
 
 
+def load_tool_predictions_long(tsv_path: str, go_terms_needed: set) -> pd.DataFrame:
+    """Read a headerless 3-column TSV (full_fasta_header, go_term, score).
+
+    Returns a DataFrame with columns: protein_id (normalised), go_term, tool_score.
+    Only rows where tool_score > 0 are returned. Duplicate (protein, GO) pairs
+    are resolved by keeping the maximum score.
+    """
+    logger.info(f"Reading long-format tool predictions: {tsv_path}")
+    df = pd.read_csv(
+        tsv_path, sep="\t", header=None,
+        names=["protein_id", "go_term", "tool_score"],
+    )
+    logger.info(f"  Total rows: {len(df)}")
+
+    df["protein_id"] = df["protein_id"].astype(str).apply(normalise_pid)
+    df["tool_score"] = pd.to_numeric(df["tool_score"], errors="coerce")
+
+    df = df[df["go_term"].isin(go_terms_needed)].copy()
+    logger.info(f"  GO terms matching eval: {df['go_term'].nunique()}")
+
+    df = df.dropna(subset=["tool_score"])
+    df = df[df["tool_score"] > 0].reset_index(drop=True)
+
+    df = df.groupby(["protein_id", "go_term"], as_index=False)["tool_score"].max()
+
+    logger.info(f"  Non-zero (protein, GO) predictions: {len(df)}")
+    return df
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -118,7 +147,10 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--tool-predictions", required=True,
-                        help="Wide-format CSV from the external tool.")
+                        help="Predictions file from the external tool.")
+    parser.add_argument("--tool-format", choices=["wide_csv", "long_tsv"], default="wide_csv",
+                        help="File format: wide_csv (DeepGOWeb default) or long_tsv "
+                             "(headerless 3-column TSV: full_header, go_term, score).")
     parser.add_argument("--results", required=True,
                         help="Path to eval_temporal_results.tsv (our method).")
     parser.add_argument("--per-term-summary", required=True,
@@ -144,7 +176,10 @@ def main():
     # ------------------------------------------------------------------
     # Load tool predictions (long format, only nonzero scores)
     # ------------------------------------------------------------------
-    tool_long = load_tool_predictions(args.tool_predictions, go_terms_needed=go_terms)
+    if args.tool_format == "long_tsv":
+        tool_long = load_tool_predictions_long(args.tool_predictions, go_terms_needed=go_terms)
+    else:
+        tool_long = load_tool_predictions(args.tool_predictions, go_terms_needed=go_terms)
 
     # ------------------------------------------------------------------
     # Join tool scores onto our validation pairs

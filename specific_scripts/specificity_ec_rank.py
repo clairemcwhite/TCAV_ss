@@ -58,6 +58,8 @@ def main():
     parser.add_argument("--exclude", default=None,
                         help="Optional TSV with ec_number and protein_id to exclude "
                              "(train/val overlap pairs).")
+    parser.add_argument("--top-n", type=int, default=50,
+                        help="Number of top-scoring EC CAVs to report per protein (default: 50).")
     args = parser.parse_args()
 
     sys.path.insert(0, str(Path(__file__).parent.parent / "tcav"))
@@ -195,7 +197,7 @@ def main():
         if idx is None:
             continue
         scores       = score_matrix[idx]
-        top20_cols   = np.argsort(scores)[::-1][:20]
+        top20_cols   = np.argsort(scores)[::-1][:args.top_n]
         true_cavs    = protein_true_cavs.get(protein_id, set())
         for rank_i, col in enumerate(top20_cols, start=1):
             ec_cav_id  = cav_ids[col]
@@ -210,9 +212,9 @@ def main():
             })
 
     top20 = pd.DataFrame(top20_rows)
-    top20_file = out_dir / "ec_specificity_top20.tsv"
+    top20_file = out_dir / f"ec_specificity_top{args.top_n}.tsv"
     top20.to_csv(top20_file, sep="\t", index=False, float_format="%.4f")
-    logger.info(f"Saved top-20 table to {top20_file}")
+    logger.info(f"Saved top-{args.top_n} table to {top20_file}")
 
     # ------------------------------------------------------------------
     # Summary
@@ -237,7 +239,7 @@ def main():
     ranks = results["rank"].values
 
     # Cumulative recall vs rank threshold
-    max_rank_show = min(50, n_cavs)
+    max_rank_show = min(args.top_n, n_cavs)
     thresholds    = np.arange(1, max_rank_show + 1)
     cum_recall    = [(ranks <= t).mean() for t in thresholds]
 
