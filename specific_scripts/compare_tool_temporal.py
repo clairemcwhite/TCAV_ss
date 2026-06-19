@@ -44,7 +44,7 @@ from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
 from scipy import stats as spstats
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, precision_recall_curve, average_precision_score
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -167,9 +167,12 @@ def main():
     # Load our results
     # ------------------------------------------------------------------
     results = pd.read_csv(args.results, sep="\t")
-    summary = pd.read_csv(args.per_term_summary, sep="\t")
     go_terms = set(results["go_term"].unique())
     logger.info(f"Loaded {len(results)} val pairs across {len(go_terms)} GO terms")
+
+    summary = pd.read_csv(args.per_term_summary, sep="\t")
+    summary = summary[summary["go_term"].isin(go_terms)].reset_index(drop=True)
+    logger.info(f"Per-term summary restricted to {len(summary)} CAV-covered GO terms")
 
     results["protein_id_norm"] = results["protein_id"].apply(normalise_pid)
 
@@ -205,6 +208,8 @@ def main():
     # Per-GO-term stats
     # ------------------------------------------------------------------
     rows = []
+    pr_data_cav  = []   # list of (recall, precision) per GO term, for macro-avg PR
+    pr_data_tool = []
 
     for go_id, grp in merged.groupby("go_term"):
         val_cav  = grp["val_cav_score"].values.astype(float)
@@ -219,15 +224,17 @@ def main():
         else:
             r_term, p_term = np.nan, np.nan
 
-        # AUC: val positives vs test negatives.
+        # AUC + PR: val positives vs test negatives.
         # Use real tool scores for negatives when available (e.g. DeepGOSE scores
         # both splits); fall back to 0 for proteins absent from tool output.
         neg_file = out_dir / f"{go_id}_test_neg_scores.tsv"
         if not neg_file.exists():
             neg_tool = np.array([])
+            neg_cav  = np.array([])
         else:
             neg_df   = pd.read_csv(neg_file, sep="\t")
             neg_pids = neg_df["protein_id"].apply(normalise_pid).tolist()
+            neg_cav  = neg_df["cav_score"].values.astype(float)
             pid_to_score = (
                 tool_long[tool_long["go_term"] == go_id]
                 .set_index("protein_id")["tool_score"]
@@ -236,6 +243,19 @@ def main():
             neg_tool = np.array([pid_to_score.get(p, 0.0) for p in neg_pids])
 
         tool_auc = compute_auc(val_tool, neg_tool)
+
+        # Collect per-term PR curve data for macro-averaging
+        if len(neg_cav) > 0:
+            y_true = np.concatenate([np.ones(len(val_cav)), np.zeros(len(neg_cav))])
+            if 0 < y_true.sum() < len(y_true):
+                for scores, store in [
+                    (np.concatenate([val_cav,  neg_cav]),  pr_data_cav),
+                    (np.concatenate([val_tool, neg_tool]), pr_data_tool),
+                ]:
+                    prec, rec, _ = precision_recall_curve(y_true, scores)
+                    # sort by ascending recall for interpolation
+                    idx = np.argsort(rec)
+                    store.append((rec[idx], prec[idx]))
 
         rows.append({
             "go_term":                      go_id,
@@ -316,7 +336,7 @@ def main():
     print(f"\n--- GO terms where tool most outperforms CAV ---")
     print(compare.nsmallest(10, "auc_diff_cav_minus_tool")[display].to_string(index=False))
 
-    make_figures(compare, merged, out_dir)
+    make_figures(compare, merged, out_dir, pr_data_cav, pr_data_tool)
 
 
 # ---------------------------------------------------------------------------
@@ -344,7 +364,22 @@ def _scatter_base(ax, tool_auc, cav_auc):
     ax.set_ylabel("CAV AUC")
 
 
-def make_figures(compare: pd.DataFrame, merged: pd.DataFrame, out_dir: Path) -> None:
+def _macro_pr(pr_curves, recall_grid):
+    """Interpolate per-term PR curves onto a common recall grid, return (mean, std)."""
+    interped = []
+    for rec, prec in pr_curves:
+        interped.append(np.interp(recall_grid, rec, prec))
+    arr = np.array(interped)
+    return arr.mean(axis=0), arr.std(axis=0)
+
+
+def make_figures(
+    compare: pd.DataFrame,
+    merged: pd.DataFrame,
+    out_dir: Path,
+    pr_data_cav: list | None = None,
+    pr_data_tool: list | None = None,
+) -> None:
     plt.rcParams.update(RCPARAMS)
 
     valid = compare.dropna(subset=["auc_val_vs_test_neg", "tool_auc_0fill_neg"]).copy()
@@ -694,6 +729,43 @@ def make_figures(compare: pd.DataFrame, merged: pd.DataFrame, out_dir: Path) -> 
         ax.set_ylim(bottom=0)
         fig.tight_layout()
         p = out_dir / fname
+        fig.savefig(p)
+        plt.close(fig)
+        logger.info(f"Saved {p}")
+
+    # ------------------------------------------------------------------
+    # 13.  Macro-averaged precision-recall curve (CAV vs external tool)
+    #      Only produced when pr_data_cav / pr_data_tool were collected,
+    #      i.e. when the neg-score TSVs exist and have a cav_score column.
+    # ------------------------------------------------------------------
+    if pr_data_cav and pr_data_tool:
+        recall_grid = np.linspace(0, 1, 101)
+        mean_cav,  std_cav  = _macro_pr(pr_data_cav,  recall_grid)
+        mean_tool, std_tool = _macro_pr(pr_data_tool, recall_grid)
+        n_terms = len(pr_data_cav)
+
+        # mAP = area under the macro-averaged PR curve
+        map_cav  = float(np.trapz(mean_cav,  recall_grid))
+        map_tool = float(np.trapz(mean_tool, recall_grid))
+
+        fig, ax = plt.subplots(figsize=(6, 5))
+        for mean, std, color, label in [
+            (mean_cav,  std_cav,  "#2166ac", f"CAV  (mAP={map_cav:.3f})"),
+            (mean_tool, std_tool, "#d6604d", f"External tool  (mAP={map_tool:.3f})"),
+        ]:
+            ax.plot(recall_grid, mean, lw=2, color=color, label=label)
+            ax.fill_between(recall_grid,
+                            np.clip(mean - std, 0, 1),
+                            np.clip(mean + std, 0, 1),
+                            alpha=0.18, color=color)
+        ax.set_xlabel("Recall")
+        ax.set_ylabel("Precision")
+        ax.set_title(f"Macro-averaged PR curve  ({n_terms} GO terms)")
+        ax.legend(frameon=False)
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1.05)
+        fig.tight_layout()
+        p = out_dir / "fig_pr_curve_macro_avg.pdf"
         fig.savefig(p)
         plt.close(fig)
         logger.info(f"Saved {p}")
