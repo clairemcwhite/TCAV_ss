@@ -745,8 +745,8 @@ def make_figures(
         n_terms = len(pr_data_cav)
 
         # mAP = area under the macro-averaged PR curve
-        map_cav  = float(np.trapz(mean_cav,  recall_grid))
-        map_tool = float(np.trapz(mean_tool, recall_grid))
+        map_cav  = float(np.trapezoid(mean_cav,  recall_grid))
+        map_tool = float(np.trapezoid(mean_tool, recall_grid))
 
         fig, ax = plt.subplots(figsize=(6, 5))
         for mean, std, color, label in [
