@@ -219,15 +219,21 @@ def main():
         else:
             r_term, p_term = np.nan, np.nan
 
-        # AUC: val positives vs test negatives (negatives scored 0)
+        # AUC: val positives vs test negatives.
+        # Use real tool scores for negatives when available (e.g. DeepGOSE scores
+        # both splits); fall back to 0 for proteins absent from tool output.
         neg_file = out_dir / f"{go_id}_test_neg_scores.tsv"
         if not neg_file.exists():
             neg_tool = np.array([])
         else:
             neg_df   = pd.read_csv(neg_file, sep="\t")
             neg_pids = neg_df["protein_id"].apply(normalise_pid).tolist()
-            # Test negatives were not in tool output → score 0
-            neg_tool = np.zeros(len(neg_pids))
+            pid_to_score = (
+                tool_long[tool_long["go_term"] == go_id]
+                .set_index("protein_id")["tool_score"]
+                .to_dict()
+            )
+            neg_tool = np.array([pid_to_score.get(p, 0.0) for p in neg_pids])
 
         tool_auc = compute_auc(val_tool, neg_tool)
 
