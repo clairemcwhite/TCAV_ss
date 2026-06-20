@@ -231,7 +231,10 @@ RCPARAMS = {"font.size": 9, "axes.labelsize": 10, "axes.titlesize": 10}
 
 
 def make_figures(summary: pd.DataFrame, detail_df: pd.DataFrame, out_dir: Path,
-                 figure_data_dir: str | None = None) -> None:
+                 figure_data_dir: str | None = None,
+                 rank_df: pd.DataFrame | None = None,
+                 tool_cols: list | None = None,
+                 llr_threshold: float = 0.0) -> None:
     plt.rcParams.update(RCPARAMS)
     from matplotlib.patches import Patch
 
@@ -370,6 +373,226 @@ def make_figures(summary: pd.DataFrame, detail_df: pd.DataFrame, out_dir: Path,
             )
             logger.info(f"Figure data: ec_per_term_recall.csv → {fig_dir}")
 
+    if rank_df is None or tool_cols is None:
+        return
+
+    # ------------------------------------------------------------------
+    # Join rank data onto detail_df
+    # ------------------------------------------------------------------
+    ranked = detail_df.merge(
+        rank_df[["protein_id", "true_ec_norm", "rank", "n_cavs"]],
+        on=["protein_id", "true_ec_norm"],
+        how="inner",
+    )
+    if len(ranked) == 0:
+        logger.warning("No rows after joining rank data — skipping rank figures")
+        return
+
+    n_cavs = int(ranked["n_cavs"].iloc[0])
+    has_llr = "llr" in ranked.columns
+
+    for tool in tool_cols:
+        safe    = tool.replace("-", "_").replace(" ", "_")
+        correct_col = f"{safe}__exact"
+        if correct_col not in ranked.columns:
+            continue
+
+        correct   = ranked[correct_col].astype(bool)
+        ranks_all = ranked["rank"].values
+
+        # ------------------------------------------------------------------
+        # Figure 1: rank histogram colored by tool correctness
+        # ------------------------------------------------------------------
+        n_total    = len(ranked)
+        ranks_right = ranked.loc[correct,  "rank"].values
+        ranks_wrong = ranked.loc[~correct, "rank"].values
+
+        max_show   = min(50, n_cavs)
+        bin_edges  = np.arange(1, max_show + 2)
+        not_shown_x = max_show + 3
+
+        counts_right = np.bincount(ranks_right[ranks_right <= max_show],
+                                   minlength=max_show + 1)[1:max_show + 1] / n_total
+        counts_wrong = np.bincount(ranks_wrong[ranks_wrong <= max_show],
+                                   minlength=max_show + 1)[1:max_show + 1] / n_total
+        n_beyond = (ranks_all > max_show).sum()
+
+        fig, ax = plt.subplots(figsize=(7, 3.5))
+        x_bins = np.arange(1, max_show + 1)
+        ax.bar(x_bins, counts_wrong, width=1.0, color="#d62728", alpha=0.75,
+               edgecolor="none", label=f"Tool incorrect")
+        ax.bar(x_bins, counts_right, width=1.0, color="#2ca02c", alpha=0.75,
+               edgecolor="none", bottom=counts_wrong, label=f"Tool correct")
+        ax.axvline(max_show + 1.5, color="0.6", lw=0.8, ls=":")
+        ax.bar(not_shown_x, n_beyond / n_total, width=1.0,
+               color="0.6", alpha=0.5, edgecolor="none", label=f"Rank > {max_show}")
+        ax.set_xlabel(f"CAV rank of true EC  (rank 1 = top score, out of {n_cavs})")
+        ax.set_ylabel("Proportion")
+        ax.set_title(f"CAV specificity rank, colored by {tool} correctness")
+        ax.set_xlim(0, not_shown_x + 1.5)
+        ticks = list(np.linspace(1, max_show, 6).astype(int)) + [not_shown_x]
+        labels = [str(t) for t in np.linspace(1, max_show, 6).astype(int)] + [f">{max_show}"]
+        ax.set_xticks(ticks)
+        ax.set_xticklabels(labels, fontsize=8)
+        ax.legend(fontsize=8)
+        fig.tight_layout()
+        p = out_dir / f"fig_ec_rank_hist_{safe}.pdf"
+        fig.savefig(p); plt.close(fig)
+        logger.info(f"Saved {p}")
+
+        # ------------------------------------------------------------------
+        # Figure 2: LLR distribution — tool-correct vs tool-incorrect
+        # ------------------------------------------------------------------
+        if has_llr:
+            llr_right = ranked.loc[correct  & ranked["llr"].notna(), "llr"].values
+            llr_wrong = ranked.loc[~correct & ranked["llr"].notna(), "llr"].values
+
+            fig, ax = plt.subplots(figsize=(5, 3.5))
+            import scipy.stats as spstats
+            for vals, label, color in [
+                (llr_wrong, f"Tool incorrect (n={len(llr_wrong)})", "#d62728"),
+                (llr_right, f"Tool correct (n={len(llr_right)})",   "#2ca02c"),
+            ]:
+                if len(vals) < 3:
+                    continue
+                kde = spstats.gaussian_kde(vals, bw_method="scott")
+                xg  = np.linspace(vals.min() - 1, vals.max() + 1, 400)
+                ax.plot(xg, kde(xg), lw=2, color=color, label=label)
+                ax.fill_between(xg, kde(xg), alpha=0.18, color=color)
+            ax.axvline(llr_threshold, color="0.4", lw=0.8, ls="--",
+                       label=f"LLR threshold ({llr_threshold})")
+            ax.set_xlabel("CAV log-likelihood ratio (LLR)")
+            ax.set_ylabel("Density")
+            ax.set_title(f"CAV LLR by {tool} prediction correctness")
+            ax.legend(fontsize=8)
+            fig.tight_layout()
+            p = out_dir / f"fig_ec_llr_by_tool_{safe}.pdf"
+            fig.savefig(p); plt.close(fig)
+            logger.info(f"Saved {p}")
+
+        # ------------------------------------------------------------------
+        # Figure 3: 2×2 complementarity (stacked bar per tool)
+        # ------------------------------------------------------------------
+        if has_llr:
+            cav_pos  = ranked["llr"] > llr_threshold
+            tool_pos = correct
+
+            n_both      = (cav_pos  &  tool_pos).sum()
+            n_cav_only  = (cav_pos  & ~tool_pos).sum()
+            n_tool_only = (~cav_pos &  tool_pos).sum()
+            n_neither   = (~cav_pos & ~tool_pos).sum()
+
+            categories = ["Both", "CAV only", f"{tool} only", "Neither"]
+            counts     = [n_both, n_cav_only, n_tool_only, n_neither]
+            colors_bar = ["#4dac26", "#1f77b4", "#d62728", "#bdbdbd"]
+
+            fig, ax = plt.subplots(figsize=(4, 4))
+            bottom = 0
+            for cat, cnt, col in zip(categories, counts, colors_bar):
+                pct = cnt / n_total * 100
+                ax.bar(0, pct, bottom=bottom, color=col, label=f"{cat} ({pct:.1f}%)")
+                if pct > 3:
+                    ax.text(0, bottom + pct / 2, f"{cat}\n{pct:.1f}%",
+                            ha="center", va="center", fontsize=8, color="white",
+                            fontweight="bold")
+                bottom += pct
+            ax.set_xlim(-0.6, 0.6)
+            ax.set_ylim(0, 100)
+            ax.set_ylabel("% of (protein, EC) pairs")
+            ax.set_xticks([])
+            ax.set_title(f"CAV vs {tool}\n(LLR > {llr_threshold})")
+            ax.legend(fontsize=7, loc="lower right")
+            fig.tight_layout()
+            p = out_dir / f"fig_ec_complementarity_{safe}.pdf"
+            fig.savefig(p); plt.close(fig)
+            logger.info(f"Saved {p}")
+
+
+# ---------------------------------------------------------------------------
+# EC rank computation (mirrors specificity_ec_rank.py logic)
+# ---------------------------------------------------------------------------
+
+def compute_ec_ranks(
+    detail_df: pd.DataFrame,
+    val_pkl: str,
+    ec_base_dirs: list,
+    scaler_pkl: str,
+    version: str,
+) -> pd.DataFrame | None:
+    """Score each val protein against all EC CAVs and return per-pair rank.
+
+    Returns a DataFrame with columns: protein_id, true_ec_norm, rank, n_cavs.
+    Returns None if prerequisites are missing.
+    """
+    import glob as _glob
+    import sys
+    import joblib
+    sys.path.insert(0, str(Path(__file__).parent.parent / "tcav"))
+    from src.utils.data_loader import load_sequence_embeddings
+
+    CAV_SUBDIR = "random_positive_train_max1000_cav"
+
+    # Load val embeddings
+    logger.info(f"Loading val embeddings: {val_pkl}")
+    val_embs, val_ids = load_sequence_embeddings(val_pkl)
+
+    _SKIP = {"sp", "tr", "sw", "ref"}
+    id_to_idx: dict[str, int] = {}
+    for i, sid in enumerate(val_ids):
+        id_to_idx[sid] = i
+        for part in sid.split("|"):
+            if part and part not in _SKIP:
+                id_to_idx.setdefault(part, i)
+
+    # Load all EC CAVs
+    base_dirs = [Path(d) for pattern in ec_base_dirs for d in sorted(_glob.glob(pattern))]
+    cav_vectors, cav_ids = [], []
+    for base in base_dirs:
+        for ec_dir in sorted(base.glob("ecNo_*")):
+            cav_file = ec_dir / CAV_SUBDIR / f"concept_{version}.npy"
+            if cav_file.exists():
+                cav_vectors.append(np.load(cav_file))
+                cav_ids.append(ec_dir.name)   # e.g. "ecNo_1-1-1-1"
+
+    if not cav_vectors:
+        logger.warning("No EC CAVs found — skipping rank computation")
+        return None
+
+    n_cavs = len(cav_vectors)
+    logger.info(f"Loaded {n_cavs} EC CAVs")
+    cav_matrix    = np.stack(cav_vectors, axis=0)          # (n_cavs, dim)
+    cav_id_to_col = {cid: i for i, cid in enumerate(cav_ids)}
+
+    scaler        = joblib.load(scaler_pkl)
+    val_preprocessed = scaler.transform(val_embs)          # (n_val, dim)
+    score_matrix  = val_preprocessed @ cav_matrix.T        # (n_val, n_cavs)
+
+    # Derive ec_cav_id from true_ec_norm ("1.1.1.1" → "ecNo_1-1-1-1")
+    rows = []
+    for _, pair in detail_df[["protein_id", "true_ec_norm"]].drop_duplicates().iterrows():
+        pid        = pair["protein_id"]
+        ec_norm    = pair["true_ec_norm"]
+        ec_cav_id  = "ecNo_" + ec_norm.replace(".", "-")
+
+        idx = id_to_idx.get(pid)
+        col = cav_id_to_col.get(ec_cav_id)
+        if idx is None or col is None:
+            continue
+
+        scores     = score_matrix[idx]
+        true_score = float(scores[col])
+        rank       = int((scores > true_score).sum()) + 1
+        rows.append({"protein_id": pid, "true_ec_norm": ec_norm,
+                     "rank": rank, "n_cavs": n_cavs})
+
+    if not rows:
+        logger.warning("No rank data computed")
+        return None
+
+    rank_df = pd.DataFrame(rows)
+    logger.info(f"Computed ranks for {len(rank_df)} (protein, EC) pairs")
+    return rank_df
+
 
 # ---------------------------------------------------------------------------
 # Main
@@ -393,6 +616,15 @@ def main():
                         help="LLR threshold for CAV binary prediction (default: 0).")
     parser.add_argument("--figure-data-dir", default=None,
                         help="If provided, write figure-ready CSVs to this directory.")
+    # Optional — needed only for rank-based comparison figures
+    parser.add_argument("--val-pkl", default=None,
+                        help="PKL of val protein embeddings (enables rank figures).")
+    parser.add_argument("--ec-base-dirs", nargs="+", default=None,
+                        help="Base dirs containing ecNo_* subdirs (glob patterns ok).")
+    parser.add_argument("--scaler-pkl", default=None,
+                        help="Shared reference population scaler pkl.")
+    parser.add_argument("--version", default="v1",
+                        help="CAV artifact version suffix (default: v1).")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -487,7 +719,21 @@ def main():
         display_cols.append("note")
     print(summary[[c for c in display_cols if c in summary.columns]].to_string(index=False))
 
-    make_figures(summary, df, out_dir, figure_data_dir=args.figure_data_dir)
+    rank_df = None
+    if args.val_pkl and args.ec_base_dirs and args.scaler_pkl:
+        rank_df = compute_ec_ranks(
+            detail_df=df,
+            val_pkl=args.val_pkl,
+            ec_base_dirs=args.ec_base_dirs,
+            scaler_pkl=args.scaler_pkl,
+            version=args.version,
+        )
+    else:
+        logger.info("Skipping rank figures (pass --val-pkl, --ec-base-dirs, --scaler-pkl to enable)")
+
+    make_figures(summary, df, out_dir, figure_data_dir=args.figure_data_dir,
+                 rank_df=rank_df, tool_cols=tool_cols,
+                 llr_threshold=args.llr_threshold)
 
 
 if __name__ == "__main__":

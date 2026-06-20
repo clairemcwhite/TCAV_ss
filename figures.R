@@ -62,143 +62,123 @@ load_ont <- function(stem, ont) {
 # Figure 2 — GO and EC evaluation
 # ===========================================================================
 
-# ---------------------------------------------------------------------------
-# 2A: Overlapping histograms — per-GO-term AUC, CAV vs DeepGoSE (MF only)
-# ---------------------------------------------------------------------------
-comp_mf <- load_ont("temporal_tool_comparison", "mf")
-
-if (!is.null(comp_mf)) {
-  p_2a <- comp_mf |>
-    select(go_term, CAV = auc_val_vs_test_neg, DeepGoSE = tool_auc) |>
-    pivot_longer(c(CAV, DeepGoSE), names_to = "method", values_to = "auc") |>
-    drop_na(auc) |>
-    ggplot(aes(x = auc, fill = method, color = method)) +
-    geom_histogram(
-      position = "identity", alpha = 0.5,
-      bins = 30, boundary = 0.5
-    ) +
-    scale_fill_manual(values  = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR)) +
-    scale_color_manual(values = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR)) +
-    base_theme() +
-    labs(
-      x     = "AUC  (val vs. test-neg)",
-      y     = "GO terms",
-      fill  = NULL,
-      color = NULL
-    )
-} else {
-  message("Skipping 2A: figure_data/temporal_tool_comparison_mf.csv not found")
-  p_2a <- NULL
-}
-
-# ---------------------------------------------------------------------------
-# 2B: Sparklines (ggridges) — AUC and AUPR distributions across MF, BP, CC
-#
-# ggridges is Claus Wilke's package for stacked density / ridgeline plots.
-# Each row is one ontology × method combination; the filled curve shows the
-# distribution of per-GO-term AUC (or AUPR) values.
-# ---------------------------------------------------------------------------
-
-# Load and combine all three ontologies
+# Load and combine all three ontologies (used by panels A, B, C)
 ont_comp <- bind_rows(
   load_ont("temporal_tool_comparison", "mf"),
   load_ont("temporal_tool_comparison", "bp"),
   load_ont("temporal_tool_comparison", "cc")
 )
 
+# Ordered factor for ontology rows: MF on top, CC middle, BP bottom in ggridges
+# (ggridges maps factor levels bottom→top on the y-axis)
+ONT_LEVELS <- c("BP", "CC", "MF")
+
+ridges_opts <- list(
+  scale          = 0.85,
+  rel_min_height = 0.01,
+  linewidth      = 0.4,
+  alpha          = 0.55
+)
+
 if (nrow(ont_comp) > 0) {
 
-  # Tidy: one row per (go_term, ontology, metric, method, value)
-  ridges_auc <- ont_comp |>
+  # ---------------------------------------------------------------------------
+  # Panel A: geom_density, faceted by ontology (MF | BP | CC)
+  # Two curves per facet: CAV and DeepGoSE
+  # ---------------------------------------------------------------------------
+  p_2a <- ont_comp |>
     select(ontology, go_term,
-           CAV     = auc_val_vs_test_neg,
+           CAV      = auc_val_vs_test_neg,
            DeepGoSE = tool_auc) |>
     pivot_longer(c(CAV, DeepGoSE), names_to = "method", values_to = "auc") |>
     drop_na(auc) |>
-    mutate(
-      row_label = factor(
-        paste(ontology, method),
-        levels = c("CC DeepGoSE", "CC CAV",
-                   "BP DeepGoSE", "BP CAV",
-                   "MF DeepGoSE", "MF CAV")
-      )
-    )
+    mutate(ontology = factor(ontology, levels = c("MF", "BP", "CC"))) |>
+    ggplot(aes(x = auc, fill = method, color = method)) +
+    geom_density(alpha = 0.45, linewidth = 0.6) +
+    facet_wrap(~ ontology, nrow = 1) +
+    scale_fill_manual(values  = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR),
+                      name = NULL) +
+    scale_color_manual(values = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR),
+                       name = NULL) +
+    scale_x_continuous(limits = c(0.4, 1)) +
+    base_theme() +
+    panel_border() +
+    labs(x = "AUC  (val vs. test-neg)", y = "Density")
 
-  ridges_aupr <- ont_comp |>
+  # ---------------------------------------------------------------------------
+  # Panel B: ggridges for AUC — one row per ontology, both methods overlaid
+  # ---------------------------------------------------------------------------
+  p_2b <- ont_comp |>
+    select(ontology, go_term,
+           CAV      = auc_val_vs_test_neg,
+           DeepGoSE = tool_auc) |>
+    pivot_longer(c(CAV, DeepGoSE), names_to = "method", values_to = "auc") |>
+    drop_na(auc) |>
+    mutate(ontology = factor(ontology, levels = ONT_LEVELS)) |>
+    ggplot(aes(x = auc, y = ontology, fill = method, color = method)) +
+    do.call(geom_density_ridges, ridges_opts) +
+    scale_fill_manual(values  = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR),
+                      name = NULL) +
+    scale_color_manual(values = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR),
+                       name = NULL) +
+    scale_x_continuous(limits = c(0.4, 1.0), expand = c(0, 0)) +
+    base_theme() +
+    labs(x = "AUC", y = NULL) +
+    theme(legend.position = "none")
+
+  # ---------------------------------------------------------------------------
+  # Panel C: ggridges for AUPR — same layout as B
+  # ---------------------------------------------------------------------------
+  p_2c <- ont_comp |>
     select(ontology, go_term,
            CAV      = aupr_val_vs_test_neg,
            DeepGoSE = tool_aupr) |>
     pivot_longer(c(CAV, DeepGoSE), names_to = "method", values_to = "aupr") |>
     drop_na(aupr) |>
-    mutate(
-      row_label = factor(
-        paste(ontology, method),
-        levels = c("CC DeepGoSE", "CC CAV",
-                   "BP DeepGoSE", "BP CAV",
-                   "MF DeepGoSE", "MF CAV")
-      )
-    )
-
-  ridges_opts <- list(
-    scale         = 0.9,
-    rel_min_height = 0.01,
-    linewidth     = 0.4,
-    alpha         = 0.55
-  )
-
-  p_2b_auc <- ridges_auc |>
-    ggplot(aes(x = auc, y = row_label, fill = method, color = method)) +
+    mutate(ontology = factor(ontology, levels = ONT_LEVELS)) |>
+    ggplot(aes(x = aupr, y = ontology, fill = method, color = method)) +
     do.call(geom_density_ridges, ridges_opts) +
-    scale_fill_manual(values  = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR)) +
-    scale_color_manual(values = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR)) +
-    scale_x_continuous(limits = c(0.4, 1.0), expand = c(0, 0)) +
-    base_theme() +
-    labs(x = "AUC", y = NULL, fill = NULL, color = NULL) +
-    theme(legend.position = "none")
-
-  p_2b_aupr <- ridges_aupr |>
-    ggplot(aes(x = aupr, y = row_label, fill = method, color = method)) +
-    do.call(geom_density_ridges, ridges_opts) +
-    scale_fill_manual(values  = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR)) +
-    scale_color_manual(values = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR)) +
+    scale_fill_manual(values  = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR),
+                      name = NULL) +
+    scale_color_manual(values = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR),
+                       name = NULL) +
     scale_x_continuous(limits = c(0, 1.0), expand = c(0, 0)) +
     base_theme() +
-    labs(x = "AUPR", y = NULL, fill = NULL, color = NULL) +
+    labs(x = "AUPR", y = NULL) +
     theme(
       axis.text.y  = element_blank(),
-      axis.ticks.y = element_blank()
+      axis.ticks.y = element_blank(),
+      legend.position = "none"
     )
 
-  # Shared legend from p_2b_auc
-  legend_2b <- get_legend(
-    p_2b_auc + theme(legend.position = "right")
+  # ---------------------------------------------------------------------------
+  # Assemble Figure 2
+  # A on top (full width); B and C side by side on bottom
+  # Legend extracted from A and placed right of B+C
+  # ---------------------------------------------------------------------------
+  legend_fig2 <- get_legend(p_2a)
+  p_2a_noleg  <- p_2a + theme(legend.position = "none")
+
+  bottom_row <- plot_grid(
+    p_2b, p_2c, legend_fig2,
+    nrow       = 1,
+    labels     = c("B", "C", ""),
+    rel_widths = c(1, 1, 0.2)
   )
 
-  p_2b <- plot_grid(
-    p_2b_auc, p_2b_aupr, legend_2b,
-    nrow  = 1,
-    rel_widths = c(1, 1, 0.25)
+  fig2 <- plot_grid(
+    p_2a_noleg,
+    bottom_row,
+    ncol        = 1,
+    labels      = c("A", ""),
+    rel_heights = c(1, 1.3)
   )
+
+  ggsave(file.path(OUT, "fig2.pdf"), fig2, width = 10, height = 8)
+  message("Saved fig2.pdf")
 
 } else {
-  message("Skipping 2B: no temporal_tool_comparison_*.csv files found")
-  p_2b <- NULL
-}
-
-# ---------------------------------------------------------------------------
-# Assemble Figure 2
-# ---------------------------------------------------------------------------
-fig2_panels <- Filter(Negate(is.null), list(p_2a, p_2b))
-
-if (length(fig2_panels) > 0) {
-  fig2 <- plot_grid(
-    plotlist  = fig2_panels,
-    ncol      = 1,
-    labels    = "AUTO",
-    rel_heights = rep(1, length(fig2_panels))
-  )
-  ggsave(file.path(OUT, "fig2.pdf"), fig2, width = 10, height = 4 * length(fig2_panels))
-  message("Saved fig2.pdf")
+  message("Skipping Figure 2: no temporal_tool_comparison_*.csv files found")
 }
 
 # ===========================================================================
