@@ -170,6 +170,10 @@ def main():
                         help="CAV artifact version suffix (default: v1).")
     parser.add_argument("--figure-data-dir", default=None,
                         help="If provided, write figure-ready CSVs to this directory.")
+    parser.add_argument("--label", default=None,
+                        help="Short label for this run (e.g. 'mf', 'bp', 'cc') appended "
+                             "to figure-data CSV filenames so multiple ontology runs "
+                             "coexist in the same directory.")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -258,10 +262,14 @@ def main():
 
         tool_auc = compute_auc(val_tool, neg_tool)
 
-        # Collect per-term PR curve data for macro-averaging
+        # Collect per-term PR curve data for macro-averaging; also compute AUPR
+        tool_aupr = np.nan
         if len(neg_cav) > 0:
             y_true = np.concatenate([np.ones(len(val_cav)), np.zeros(len(neg_cav))])
             if 0 < y_true.sum() < len(y_true):
+                tool_aupr = float(average_precision_score(
+                    y_true, np.concatenate([val_tool, neg_tool])
+                ))
                 for scores, store in [
                     (np.concatenate([val_cav,  neg_cav]),  pr_data_cav),
                     (np.concatenate([val_tool, neg_tool]), pr_data_tool),
@@ -291,7 +299,8 @@ def main():
         rows.append({
             "go_term":                      go_id,
             "n_val_proteins":               len(grp),
-            "tool_auc":           tool_auc,
+            "tool_auc":                     tool_auc,
+            "tool_aupr":                    tool_aupr,
             "tool_recall_at_threshold":     recall,
             "tool_n_val_nonzero":           n_nonzero,
             "spearman_r_cav_vs_tool":       r_term,
@@ -375,18 +384,24 @@ def main():
         pool_neg_llr=np.array(pool_neg_llr),
         pool_neg_tool=np.array(pool_neg_tool),
         figure_data_dir=args.figure_data_dir,
+        label=args.label,
     )
 
     if args.figure_data_dir:
         fig_dir = Path(args.figure_data_dir)
         fig_dir.mkdir(parents=True, exist_ok=True)
+        label_suffix = f"_{args.label}" if args.label else ""
 
-        compare.to_csv(fig_dir / "temporal_tool_comparison.csv", index=False, float_format="%.4f")
+        compare.to_csv(
+            fig_dir / f"temporal_tool_comparison{label_suffix}.csv",
+            index=False, float_format="%.4f"
+        )
 
         pair_cols = ["protein_id", "go_term", "val_cav_score", "llr",
                      "tool_score", "test_pos_percentile", "test_neg_percentile"]
         merged[[c for c in pair_cols if c in merged.columns]].to_csv(
-            fig_dir / "temporal_protein_pairs.csv", index=False, float_format="%.4f"
+            fig_dir / f"temporal_protein_pairs{label_suffix}.csv",
+            index=False, float_format="%.4f"
         )
 
         logger.info(f"Figure data written to {fig_dir}")
@@ -648,71 +663,45 @@ def make_rank_scatter(
     not_pred_x = n_go + 3
     gap_x      = n_go + 2
 
-    fig, (ax_cav, ax_tool) = plt.subplots(1, 2, figsize=(12, 4), sharex=False)
+    fig, (ax_cav, ax_tool) = plt.subplots(1, 2, figsize=(9, 4), sharey=True)
 
-    # --- top: CAV ---
+    # --- left: CAV ---
     cav_counts = np.bincount(cav_ranks_above, minlength=n_go + 1)[1:n_go + 1] / n_total
     ax_cav.bar(np.arange(1, n_go + 1), cav_counts,
                width=1.0, color="#1f77b4", alpha=0.75, edgecolor="none")
     ax_cav.axvline(gap_x - 0.5, color="0.6", lw=0.8, ls=":")
     ax_cav.bar(not_pred_x, n_cav_below / n_total,
-               width=1.0, color="#1f77b4", alpha=0.35, edgecolor="none",
-               label="Below threshold (LLR ≤ 1)")
+               width=1.0, color="#1f77b4", alpha=0.35, edgecolor="none")
     ax_cav.set_ylabel("Proportion")
     ax_cav.set_xlabel("Rank of true GO term  (rank 1 = top score)")
-    ax_cav.set_title(f"CAV", fontsize=10)
-    ax_tool.set_title(f"External tool", fontsize=10)
-    fig.suptitle(
-        f"GO term specificity rank distribution\n"
-        f"({n_total} val protein–GO pairs, {n_go} GO terms)",
-        fontsize=10,
-    )
-    ax_cav.text(0.97, 0.97,
-                f"Top-3: {pct_cav_top3:.1f}%  |  below threshold: {n_cav_below/n_total*100:.1f}%",
-                transform=ax_cav.transAxes, ha="right", va="top", fontsize=8,
-                bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="0.8", alpha=0.8))
+    ax_cav.set_title("CAV", fontsize=10)
     ax_cav.set_xlim(0, not_pred_x + 1.5)
-    ax_cav.legend(loc="upper center", fontsize=8)
 
-    # --- bottom: external tool ---
+    # --- right: external tool ---
     tool_counts = np.bincount(tool_ranks_pred, minlength=n_go + 1)[1:n_go + 1] / n_total
     ax_tool.bar(np.arange(1, n_go + 1), tool_counts,
                 width=1.0, color="#d62728", alpha=0.75, edgecolor="none")
     ax_tool.axvline(gap_x - 0.5, color="0.6", lw=0.8, ls=":")
     ax_tool.bar(not_pred_x, n_not_predicted / n_total,
-                width=1.0, color="#d62728", alpha=0.35, edgecolor="none",
-                label="True GO term not predicted")
+                width=1.0, color="#d62728", alpha=0.35, edgecolor="none")
     ax_tool.set_xlabel("Rank of true GO term  (rank 1 = top score)")
-    ax_tool.text(0.97, 0.97,
-                 f"Top-3: {pct_tool_top3:.1f}%  |  not predicted: {n_not_predicted/n_total*100:.1f}%",
-                 transform=ax_tool.transAxes, ha="right", va="top", fontsize=8,
-                 bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="0.8", alpha=0.8))
+    ax_tool.set_title("External tool", fontsize=10)
     ax_tool.set_xlim(0, not_pred_x + 1.5)
-    ax_tool.legend(loc="upper center", fontsize=8)
 
-    # Shared x-ticks
-    rank_ticks  = list(np.linspace(1, n_go, 6).astype(int)) + [not_pred_x]
-    rank_labels = [str(t) for t in np.linspace(1, n_go, 6).astype(int)] + ["Below\nthresh." if True else "Not\npred."]
-    # different last label per panel
-    for ax, last_lbl in [(ax_cav, "Below\nthresh."), (ax_tool, "Not\npred.")]:
-        ax.set_xticks(rank_ticks)
-        ax.set_xticklabels([str(t) for t in np.linspace(1, n_go, 6).astype(int)] + [last_lbl],
-                           fontsize=8)
-
-    fig.tight_layout(rect=[0, 0, 1, 0.93])
-    ax.set_title(
+    fig.suptitle(
         f"GO term specificity rank distribution\n"
-        f"({n_pairs} val protein–GO pairs, {n_go} GO terms)"
+        f"({n_total} val protein–GO pairs, {n_go} GO terms)",
+        fontsize=10,
     )
-    ax.legend()
-    # Annotate rank=1 percentages
-    ax.text(
-        0.97, 0.97,
-        f"CAV rank=1:  {pct_cav1:.1f}%\nTool rank=1: {pct_tool1:.1f}%",
-        transform=ax.transAxes, ha="right", va="top", fontsize=8,
-        bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="0.8", alpha=0.8),
-    )
-    fig.tight_layout()
+
+    # Shared x-ticks, different last label per panel
+    base_ticks  = list(np.linspace(1, n_go, 6).astype(int))
+    base_labels = [str(t) for t in base_ticks]
+    for ax, last_lbl in [(ax_cav, "Below\nthresh."), (ax_tool, "Not\npred.")]:
+        ax.set_xticks(base_ticks + [not_pred_x])
+        ax.set_xticklabels(base_labels + [last_lbl], fontsize=8)
+
+    fig.tight_layout(rect=[0, 0, 1, 0.9])
     p = out_dir / "fig_specificity_rank_density.pdf"
     fig.savefig(p)
     plt.close(fig)
@@ -740,6 +729,7 @@ def make_figures(
     pool_neg_llr: np.ndarray | None = None,
     pool_neg_tool: np.ndarray | None = None,
     figure_data_dir: str | None = None,
+    label: str | None = None,
 ) -> None:
     plt.rcParams.update(RCPARAMS)
 
@@ -1258,18 +1248,20 @@ def make_figures(
         if figure_data_dir:
             fig_dir = Path(figure_data_dir)
             fig_dir.mkdir(parents=True, exist_ok=True)
+            lsuffix = f"_{label}" if label else ""
             pd.DataFrame({
                 "recall":            recall_grid,
                 "cav_precision":     mean_cav,
                 "cav_precision_sd":  std_cav,
                 "tool_precision":    mean_tool,
                 "tool_precision_sd": std_tool,
-            }).to_csv(fig_dir / "temporal_pr_curves.csv", index=False, float_format="%.4f")
-            logger.info(f"Figure data: temporal_pr_curves.csv → {fig_dir}")
+            }).to_csv(fig_dir / f"temporal_pr_curves{lsuffix}.csv", index=False, float_format="%.4f")
+            logger.info(f"Figure data: temporal_pr_curves{lsuffix}.csv → {fig_dir}")
 
     if figure_data_dir and pool_pos_cav is not None and len(pool_pos_cav) > 0:
         fig_dir = Path(figure_data_dir)
         fig_dir.mkdir(parents=True, exist_ok=True)
+        lsuffix = f"_{label}" if label else ""
         density_dfs = []
         if len(pool_pos_cav):
             density_dfs.append(pd.DataFrame({
@@ -1285,9 +1277,9 @@ def make_figures(
             }))
         if density_dfs:
             pd.concat(density_dfs, ignore_index=True).to_csv(
-                fig_dir / "temporal_pos_neg_density.csv", index=False, float_format="%.4f"
+                fig_dir / f"temporal_pos_neg_density{lsuffix}.csv", index=False, float_format="%.4f"
             )
-            logger.info(f"Figure data: temporal_pos_neg_density.csv → {fig_dir}")
+            logger.info(f"Figure data: temporal_pos_neg_density{lsuffix}.csv → {fig_dir}")
 
 
 if __name__ == "__main__":

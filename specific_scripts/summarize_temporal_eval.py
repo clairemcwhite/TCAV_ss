@@ -23,7 +23,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from scipy import stats as spstats
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, average_precision_score
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -135,6 +135,16 @@ def compute_go_term_auc(val_scores: np.ndarray, neg_scores: np.ndarray) -> float
     return float(roc_auc_score(y_true, y_score))
 
 
+def compute_go_term_aupr(val_scores: np.ndarray, neg_scores: np.ndarray) -> float:
+    if len(val_scores) == 0 or len(neg_scores) == 0:
+        return np.nan
+    y_true  = np.concatenate([np.ones(len(val_scores)), np.zeros(len(neg_scores))])
+    y_score = np.concatenate([val_scores, neg_scores])
+    if y_true.sum() == 0 or y_true.sum() == len(y_true):
+        return np.nan
+    return float(average_precision_score(y_true, y_score))
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -155,6 +165,10 @@ def main():
                         help="Ontology namespace for depth calculation (default: mf).")
     parser.add_argument("--figure-data-dir", default=None,
                         help="If provided, write figure-ready CSVs to this directory.")
+    parser.add_argument("--label", default=None,
+                        help="Short label for this run (e.g. 'mf', 'bp', 'cc') appended "
+                             "to figure-data CSV filenames so multiple ontology runs "
+                             "coexist in the same directory.")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -190,12 +204,14 @@ def main():
 
         val_scores = grp["val_cav_score"].values.astype(float)
         auc        = compute_go_term_auc(val_scores, neg_scores)
+        aupr       = compute_go_term_aupr(val_scores, neg_scores)
 
         row = {
             "go_term":                go_id,
             "n_val_proteins":         len(grp),
             "n_test_neg":             len(neg_scores),
             "auc_val_vs_test_neg":    auc,
+            "aupr_val_vs_test_neg":   aupr,
             "pct_llr_positive":       float((grp["llr"] > 0).mean() * 100),
             "median_val_cav_score":   float(grp["val_cav_score"].median()),
             "median_test_pos_pct":    float(grp["test_pos_percentile"].median()),
@@ -221,7 +237,8 @@ def main():
     if args.figure_data_dir:
         fig_dir = Path(args.figure_data_dir)
         fig_dir.mkdir(parents=True, exist_ok=True)
-        out_path = fig_dir / "temporal_per_term_summary.csv"
+        label_suffix = f"_{args.label}" if args.label else ""
+        out_path = fig_dir / f"temporal_per_term_summary{label_suffix}.csv"
         per_term.to_csv(out_path, index=False, float_format="%.4f")
         logger.info(f"Figure data written to {out_path}")
 
