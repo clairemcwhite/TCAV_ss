@@ -96,38 +96,45 @@ if (nrow(ont_comp) > 0) {
   )
 
   if (nrow(ranks_all) > 0) {
-    p_2a <- ranks_all |>
+    bins_n <- 40
+    rank_binned <- bind_rows(
+      ranks_all |>
+        filter(llr > 0) |>
+        mutate(method = "CAV", rank_pct = cav_rank / n_go_terms),
+      ranks_all |>
+        filter(tool_predicted == TRUE) |>
+        mutate(method = "DeepGoSE", rank_pct = tool_rank / n_go_terms)
+    ) |>
       mutate(
-        CAV      = cav_rank  / n_go_terms,
-        DeepGoSE = tool_rank / n_go_terms
+        bin     = floor(rank_pct * bins_n) / bins_n,
+        method  = factor(method,  levels = c("CAV", "DeepGoSE")),
+        ontology = factor(ontology, levels = c("MF", "BP", "CC"))
       ) |>
-      select(ontology, protein_id, go_term, CAV, DeepGoSE) |>
-      pivot_longer(c(CAV, DeepGoSE), names_to = "method", values_to = "pct_rank") |>
-      mutate(
-        ontology = factor(ontology, levels = c("MF", "BP", "CC")),
-        method   = factor(method, levels = c("DeepGoSE", "CAV"))  # CAV on top
-      ) |>
-      ggplot(aes(x = pct_rank, y = method, fill = method, color = method)) +
-      geom_density_ridges(
-        stat          = "binline",
-        bins          = 40,
-        scale         = 0.9,
-        alpha         = 0.6,
-        linewidth     = 0.4,
-        draw_baseline = FALSE
-      ) +
-      facet_wrap(~ ontology, nrow = 1) +
-      scale_fill_manual(values  = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR),
-                        name = NULL) +
-      scale_color_manual(values = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR),
-                         name = NULL) +
+      count(method, ontology, bin) |>
+      group_by(method, ontology) |>
+      mutate(prop = n / sum(n)) |>
+      ungroup()
+
+    p_2a <- rank_binned |>
+      ggplot(aes(x = bin + 0.5 / bins_n, y = prop, fill = method, color = method)) +
+      geom_col(width = 1 / bins_n, alpha = 0.75, linewidth = 0.15) +
+      facet_grid(method ~ ontology, scales = "free_y") +
+      scale_fill_manual(values  = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR), name = NULL) +
+      scale_color_manual(values = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR), name = NULL) +
       scale_x_continuous(
         limits = c(0, 1),
-        labels = scales::percent_format(accuracy = 1)
+        labels = scales::percent_format(accuracy = 1),
+        expand = c(0, 0)
       ) +
+      scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
       base_theme() +
       panel_border() +
-      labs(x = "Rank percentile  (lower = higher rank for true GO term)", y = NULL)
+      labs(x = "Rank percentile  (0% = true GO term ranked first)", y = "Proportion") +
+      theme(
+        legend.position  = "none",
+        strip.background = element_blank(),
+        strip.text.y     = element_text(angle = 0, hjust = 0)
+      )
   } else {
     message("Skipping rank histogram: no go_specificity_ranks_*.csv files found")
     p_2a <- NULL
