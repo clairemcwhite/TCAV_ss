@@ -143,7 +143,7 @@ if (nrow(ont_comp) > 0) {
       geom_col(width = bar_w, linewidth = 0.15) +
       geom_vline(xintercept = EXCL_SEP, linetype = "dotted",
                  color = "gray50", linewidth = 0.5) +
-      facet_grid(method ~ ontology, scales = "free_y") +
+      facet_grid(method ~ ontology) +
       scale_fill_manual(values  = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR), name = NULL) +
       scale_color_manual(values = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR), name = NULL) +
       scale_x_continuous(
