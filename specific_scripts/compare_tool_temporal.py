@@ -624,77 +624,82 @@ def make_rank_scatter(
     print(f"{'='*55}")
 
     # ------------------------------------------------------------------
-    # Density curves: distribution of rank for CAV vs tool
+    # Rank histograms: CAV (LLR > 1 only) and tool (predicted only),
+    # with a "below threshold" / "not predicted" bar for the rest.
+    # All proportions use n_total as denominator.
     # ------------------------------------------------------------------
     plt.rcParams.update(RCPARAMS)
     n_total   = len(rank_df)
+    llr_vals  = rank_df["llr"].values
     predicted = rank_df["tool_predicted"].values
 
-    cav_ranks       = rank_df["cav_rank"].values
+    above_thresh    = llr_vals > 1
+    cav_ranks_above = rank_df.loc[above_thresh, "cav_rank"].values
+    n_cav_below     = (~above_thresh).sum()
+
     tool_ranks_pred = rank_df.loc[predicted, "tool_rank"].values
     n_not_predicted = (~predicted).sum()
 
-    # One bin per rank, plus a gap + extra bin for "not predicted"
-    bin_edges  = np.arange(1, n_go + 2)          # edges: 1,2,...,n_go+1
-    not_pred_x = n_go + 3                         # visually separated x position
-    gap_x      = n_go + 2                         # dotted line position
+    # top-3 rates out of ALL pairs (including below-threshold / not-predicted)
+    pct_cav_top3  = (above_thresh & (rank_df["cav_rank"].values  <= 3)).sum() / n_total * 100
+    pct_tool_top3 = (predicted     & (rank_df["tool_rank"].values <= 3)).sum() / n_total * 100
 
-    fig, (ax_cav, ax_tool) = plt.subplots(2, 1, figsize=(7, 6), sharex=False)
+    # Layout: rank bins 1..n_go, then gap, then extra bar
+    not_pred_x = n_go + 3
+    gap_x      = n_go + 2
 
-    # --- top: CAV, colored by LLR > 0 (green) vs LLR <= 0 (red) ---
-    llr_vals  = rank_df["llr"].values
-    pos_llr   = llr_vals > 1
-    neg_llr   = ~pos_llr  # includes NaN (treated as <= 1)
+    fig, (ax_cav, ax_tool) = plt.subplots(1, 2, figsize=(12, 4), sharex=False)
 
-    ranks_pos = cav_ranks[pos_llr]
-    ranks_neg = cav_ranks[neg_llr]
-
-    counts_pos = np.bincount(ranks_pos, minlength=n_go + 1)[1:n_go + 1] / n_total
-    counts_neg = np.bincount(ranks_neg, minlength=n_go + 1)[1:n_go + 1] / n_total
-    x_bins = np.arange(1, n_go + 1)
-
-    ax_cav.bar(x_bins, counts_neg, width=1.0, color="#d62728", alpha=0.75,
-               edgecolor="none", label="LLR ≤ 1")
-    ax_cav.bar(x_bins, counts_pos, width=1.0, color="#2ca02c", alpha=0.75,
-               edgecolor="none", bottom=counts_neg, label="LLR > 1")
-
+    # --- top: CAV ---
+    cav_counts = np.bincount(cav_ranks_above, minlength=n_go + 1)[1:n_go + 1] / n_total
+    ax_cav.bar(np.arange(1, n_go + 1), cav_counts,
+               width=1.0, color="#1f77b4", alpha=0.75, edgecolor="none")
+    ax_cav.axvline(gap_x - 0.5, color="0.6", lw=0.8, ls=":")
+    ax_cav.bar(not_pred_x, n_cav_below / n_total,
+               width=1.0, color="#1f77b4", alpha=0.35, edgecolor="none",
+               label="Below threshold (LLR ≤ 1)")
     ax_cav.set_ylabel("Proportion")
-    ax_cav.set_title(
+    ax_cav.set_xlabel("Rank of true GO term  (rank 1 = top score)")
+    ax_cav.set_title(f"CAV", fontsize=10)
+    ax_tool.set_title(f"External tool", fontsize=10)
+    fig.suptitle(
         f"GO term specificity rank distribution\n"
         f"({n_total} val protein–GO pairs, {n_go} GO terms)",
         fontsize=10,
     )
-    ax_cav.text(0.97, 0.97, f"CAV rank=1: {pct_cav1:.1f}%",
+    ax_cav.text(0.97, 0.97,
+                f"Top-3: {pct_cav_top3:.1f}%  |  below threshold: {n_cav_below/n_total*100:.1f}%",
                 transform=ax_cav.transAxes, ha="right", va="top", fontsize=8,
                 bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="0.8", alpha=0.8))
     ax_cav.set_xlim(0, not_pred_x + 1.5)
-    ax_cav.legend(loc="upper right", fontsize=8)
+    ax_cav.legend(loc="upper center", fontsize=8)
 
     # --- bottom: external tool ---
     tool_counts = np.bincount(tool_ranks_pred, minlength=n_go + 1)[1:n_go + 1] / n_total
     ax_tool.bar(np.arange(1, n_go + 1), tool_counts,
                 width=1.0, color="#d62728", alpha=0.75, edgecolor="none")
-    # "Not predicted" bar, separated by a gap
     ax_tool.axvline(gap_x - 0.5, color="0.6", lw=0.8, ls=":")
     ax_tool.bar(not_pred_x, n_not_predicted / n_total,
-                width=1.0, color="#d62728", alpha=0.4, edgecolor="none",
+                width=1.0, color="#d62728", alpha=0.35, edgecolor="none",
                 label="True GO term not predicted")
-    ax_tool.set_ylabel("Proportion")
     ax_tool.set_xlabel("Rank of true GO term  (rank 1 = top score)")
-    ax_tool.text(0.97, 0.97, f"Tool rank=1: {pct_tool1:.1f}%  |  true GO term not predicted: {n_not_predicted/n_total*100:.1f}%",
+    ax_tool.text(0.97, 0.97,
+                 f"Top-3: {pct_tool_top3:.1f}%  |  not predicted: {n_not_predicted/n_total*100:.1f}%",
                  transform=ax_tool.transAxes, ha="right", va="top", fontsize=8,
                  bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="0.8", alpha=0.8))
     ax_tool.set_xlim(0, not_pred_x + 1.5)
-
-    # Shared x-ticks
-    rank_ticks = list(np.linspace(1, n_go, 6).astype(int)) + [not_pred_x]
-    rank_labels = [str(t) for t in np.linspace(1, n_go, 6).astype(int)] + ["Not\npred."]
-    for ax in (ax_cav, ax_tool):
-        ax.set_xticks(rank_ticks)
-        ax.set_xticklabels(rank_labels, fontsize=8)
     ax_tool.legend(loc="upper center", fontsize=8)
 
-    fig.tight_layout(h_pad=1.5)
+    # Shared x-ticks
+    rank_ticks  = list(np.linspace(1, n_go, 6).astype(int)) + [not_pred_x]
+    rank_labels = [str(t) for t in np.linspace(1, n_go, 6).astype(int)] + ["Below\nthresh." if True else "Not\npred."]
+    # different last label per panel
+    for ax, last_lbl in [(ax_cav, "Below\nthresh."), (ax_tool, "Not\npred.")]:
+        ax.set_xticks(rank_ticks)
+        ax.set_xticklabels([str(t) for t in np.linspace(1, n_go, 6).astype(int)] + [last_lbl],
+                           fontsize=8)
+
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
     ax.set_title(
         f"GO term specificity rank distribution\n"
         f"({n_pairs} val protein–GO pairs, {n_go} GO terms)"
