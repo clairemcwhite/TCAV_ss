@@ -587,6 +587,14 @@ def make_rank_scatter(
               f"{n_with_any} ({100*n_with_any/n_total_np:.1f}%)")
         print(f"  => tool makes no predictions for protein at all:             "
               f"{n_total_np - n_with_any} ({100*(n_total_np-n_with_any)/n_total_np:.1f}%)")
+        silent_proteins = not_pred[~not_pred["protein_id"].isin(tool_proteins)]["protein_id"].unique()
+        if len(silent_proteins) > 0:
+            preview = silent_proteins[:10]
+            print(f"\n  Preview of proteins with zero tool predictions ({len(silent_proteins)} total):")
+            for pid in preview:
+                print(f"    {pid}")
+            if len(silent_proteins) > 10:
+                print(f"    ... ({len(silent_proteins) - 10} more)")
         print(f"{'='*55}")
 
     # Summary
