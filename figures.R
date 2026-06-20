@@ -202,10 +202,47 @@ if (length(fig2_panels) > 0) {
 }
 
 # ===========================================================================
-# Other figures (scaffold — add panels as data becomes available)
+# EC figures
 # ===========================================================================
 
-# --- EC tool comparison ---
+# ---------------------------------------------------------------------------
+# EC histogram: per-EC-term recall distribution, one curve per tool
+# (restricted to tools with full overlapping coverage with CAV ECs)
+# ---------------------------------------------------------------------------
+ec_per_term_path <- file.path(DATA, "ec_per_term_recall.csv")
+
+p_ec_hist <- NULL
+if (file.exists(ec_per_term_path)) {
+  ec_per_term <- read_csv(ec_per_term_path, show_col_types = FALSE)
+
+  # Assign Okabe-Ito colors: CAV gets the blue slot, others get remaining colors
+  tools_ordered <- c("CAV", sort(setdiff(unique(ec_per_term$tool), "CAV")))
+  oi_cycle      <- unname(oi[c("blue", "vermillion", "green", "orange",
+                                "sky_blue", "pink", "yellow", "black")])
+  tool_colors   <- setNames(oi_cycle[seq_along(tools_ordered)], tools_ordered)
+
+  p_ec_hist <- ec_per_term |>
+    mutate(tool = factor(tool, levels = tools_ordered)) |>
+    ggplot(aes(x = recall, fill = tool, color = tool)) +
+    geom_histogram(
+      position = "identity", alpha = 0.45,
+      bins = 25, boundary = 0
+    ) +
+    scale_fill_manual(values  = tool_colors) +
+    scale_color_manual(values = tool_colors) +
+    scale_x_continuous(limits = c(0, 1), expand = c(0, 0)) +
+    base_theme() +
+    labs(
+      x     = "Recall per EC term  (fraction of proteins correctly predicted)",
+      y     = "EC terms",
+      fill  = NULL,
+      color = NULL
+    )
+} else {
+  message("Skipping EC histogram: figure_data/ec_per_term_recall.csv not found")
+}
+
+# --- EC summary panels ---
 ec_summary_path <- file.path(DATA, "ec_tool_comparison_summary.csv")
 ec_llr_path     <- file.path(DATA, "ec_recall_vs_llr.csv")
 
@@ -252,26 +289,24 @@ if (file.exists(ec_summary_path)) {
                  color = "gray60", linewidth = 0.7) +
       base_theme() +
       labs(x = "LLR threshold", y = "Recall (fraction of val pairs)")
-
-    fig_ec <- plot_grid(
-      p_ec_recall, p_ec_coverage, p_ec_llr,
-      nrow   = 1,
-      labels = "AUTO",
-      align  = "hv",
-      axis   = "tblr"
-    )
   } else {
-    fig_ec <- plot_grid(
-      p_ec_recall, p_ec_coverage,
-      nrow   = 1,
-      labels = "AUTO",
-      align  = "hv",
-      axis   = "tblr"
-    )
+    p_ec_llr <- NULL
   }
 
-  ggsave(file.path(OUT, "fig_ec_eval.pdf"), fig_ec, width = 12, height = 4.5)
-  message("Saved fig_ec_eval.pdf")
+  ec_summary_panels <- Filter(Negate(is.null),
+                               list(p_ec_hist, p_ec_recall, p_ec_coverage, p_ec_llr))
+  if (length(ec_summary_panels) > 0) {
+    fig_ec <- plot_grid(
+      plotlist = ec_summary_panels,
+      nrow     = 1,
+      labels   = "AUTO",
+      align    = "hv",
+      axis     = "tblr"
+    )
+    ggsave(file.path(OUT, "fig_ec_eval.pdf"), fig_ec,
+           width = 4.5 * length(ec_summary_panels), height = 4.5)
+    message("Saved fig_ec_eval.pdf")
+  }
 }
 
 message("\nAll figures written to ", OUT, "/")

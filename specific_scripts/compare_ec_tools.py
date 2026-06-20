@@ -341,6 +341,35 @@ def make_figures(summary: pd.DataFrame, detail_df: pd.DataFrame, out_dir: Path,
             )
             logger.info(f"Figure data: ec_recall_vs_llr.csv → {fig_dir}")
 
+        # Per-EC-term recall for full-coverage tools + CAV
+        # "Full coverage" = same n_predicted as CAV (matches the existing bar-chart filter)
+        safe_to_tool = {t.replace("-", "_").replace(" ", "_"): t
+                        for t in summary["tool"].tolist() if t != "CAV"}
+        full_cov_safe = {t.replace("-", "_").replace(" ", "_")
+                         for t in plot_summary["tool"].tolist() if t != "CAV"}
+        exact_cols = [c for c in detail_df.columns if c.endswith("__exact")]
+        has_cav = "cav__llr_positive" in detail_df.columns
+
+        rows = []
+        for ec, grp in detail_df.groupby("true_ec_norm"):
+            n = len(grp)
+            if has_cav:
+                rows.append({"ec_number": ec, "n_proteins": n, "tool": "CAV",
+                              "recall": float(grp["cav__llr_positive"].mean())})
+            for col in exact_cols:
+                tool_safe = col[: -len("__exact")]
+                if tool_safe not in full_cov_safe:
+                    continue
+                rows.append({"ec_number": ec, "n_proteins": n,
+                              "tool": safe_to_tool.get(tool_safe, tool_safe),
+                              "recall": float(grp[col].mean())})
+
+        if rows:
+            pd.DataFrame(rows).to_csv(
+                fig_dir / "ec_per_term_recall.csv", index=False, float_format="%.4f"
+            )
+            logger.info(f"Figure data: ec_per_term_recall.csv → {fig_dir}")
+
 
 # ---------------------------------------------------------------------------
 # Main
