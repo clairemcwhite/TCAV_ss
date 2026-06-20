@@ -223,6 +223,7 @@ def main():
     pr_data_tool = []
     pool_pos_cav, pool_neg_cav = [], []   # pooled CAV scores across all GO terms
     pool_pos_llr, pool_neg_llr = [], []   # pooled LLR scores across all GO terms
+    pool_neg_tool              = []        # tool scores for negatives (parallel to pool_neg_llr)
 
     for go_id, grp in merged.groupby("go_term"):
         val_cav  = grp["val_cav_score"].values.astype(float)
@@ -285,6 +286,7 @@ def main():
                 llr_neg = (spstats.norm.logpdf(neg_cav, pos_mu, pos_sigma) -
                            spstats.norm.logpdf(neg_cav, neg_mu, neg_sigma))
                 pool_neg_llr.extend(llr_neg.tolist())
+                pool_neg_tool.extend(neg_tool.tolist())
 
         rows.append({
             "go_term":                      go_id,
@@ -371,6 +373,7 @@ def main():
         pool_neg_cav=np.array(pool_neg_cav),
         pool_pos_llr=np.array(pool_pos_llr),
         pool_neg_llr=np.array(pool_neg_llr),
+        pool_neg_tool=np.array(pool_neg_tool),
         figure_data_dir=args.figure_data_dir,
     )
 
@@ -621,6 +624,7 @@ def make_figures(
     pool_neg_cav: np.ndarray | None = None,
     pool_pos_llr: np.ndarray | None = None,
     pool_neg_llr: np.ndarray | None = None,
+    pool_neg_tool: np.ndarray | None = None,
     figure_data_dir: str | None = None,
 ) -> None:
     plt.rcParams.update(RCPARAMS)
@@ -946,6 +950,47 @@ def make_figures(
     fig.savefig(p)
     plt.close(fig)
     logger.info(f"Saved {p}")
+
+    # ------------------------------------------------------------------
+    # 10b. Same filled KDE but for negative test proteins
+    # ------------------------------------------------------------------
+    if pool_neg_tool is not None and len(pool_neg_llr) > 0 and len(pool_neg_tool) == len(pool_neg_llr):
+        neg_tool_arr = pool_neg_tool.astype(float)
+        neg_llr_arr  = pool_neg_llr.astype(float)
+
+        linthresh_neg = max(1.0, float(np.percentile(np.abs(neg_llr_arr[neg_llr_arr != 0]), 10)))
+        y_plot_neg    = symlog_transform(neg_llr_arr, linthresh_neg)
+        tick_pos_neg, tick_labels_neg = symlog_ticks(linthresh_neg, neg_llr_arr)
+        hline_neg     = symlog_transform(np.array([0.0]), linthresh_neg)[0]
+
+        fig, ax = plt.subplots(figsize=(5, 5))
+        ax.set_facecolor("#fef9c3")
+        try:
+            kde2d_neg = spstats.gaussian_kde(
+                np.vstack([neg_tool_arr, y_plot_neg]), bw_method="scott"
+            )
+            xg = np.linspace(neg_tool_arr.min(), neg_tool_arr.max(), 120)
+            yg = np.linspace(y_plot_neg.min(),   y_plot_neg.max(),   120)
+            Xg, Yg = np.meshgrid(xg, yg)
+            Zg = kde2d_neg(np.vstack([Xg.ravel(), Yg.ravel()])).reshape(Xg.shape)
+            ax.contourf(Xg, Yg, Zg, levels=12, cmap=yl_to_blue, zorder=1)
+            ax.contour( Xg, Yg, Zg, levels=12, colors="white",
+                        alpha=0.25, linewidths=0.5, zorder=2)
+        except Exception as e:
+            logger.warning(f"Filled KDE (negatives) failed: {e}")
+        ax.axvline(0,        color="0.4", lw=0.8, ls="--", zorder=3)
+        ax.axhline(hline_neg, color="0.4", lw=0.8, ls="--", zorder=3)
+        ax.set_yticks(tick_pos_neg)
+        ax.set_yticklabels(tick_labels_neg)
+        ax.set_xlabel("Tool score")
+        ax.set_ylabel("Log-likelihood ratio (LLR)  (symlog scale)")
+        ax.set_title(f"Negatives: LLR vs tool score\n"
+                     f"(n={len(neg_llr_arr):,} negative test pairs, filled KDE)")
+        fig.tight_layout()
+        p = out_dir / "fig_neg_llr_vs_tool_filled_kde.pdf"
+        fig.savefig(p)
+        plt.close(fig)
+        logger.info(f"Saved {p}")
 
     # ------------------------------------------------------------------
     # 11 & 12.  1-D KDE split by tool-predicted vs tool-silent
