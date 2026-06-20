@@ -83,8 +83,10 @@ ridges_opts <- list(
 if (nrow(ont_comp) > 0) {
 
   # ---------------------------------------------------------------------------
-  # Panel A: geom_density, faceted by ontology (MF | BP | CC)
-  # Two curves per facet: CAV and DeepGoSE
+  # Panel A: ggridges histogram ridges, faceted by ontology (MF | BP | CC)
+  # y = method (CAV on top, DeepGoSE below); x = per-GO-term AUC
+  # stat = "binline" gives a histogram ridge rather than a KDE ridge,
+  # inspired by the per-prediction split-KDE plots in compare_tool_temporal.py
   # ---------------------------------------------------------------------------
   p_2a <- ont_comp |>
     select(ontology, go_term,
@@ -92,18 +94,28 @@ if (nrow(ont_comp) > 0) {
            DeepGoSE = tool_auc) |>
     pivot_longer(c(CAV, DeepGoSE), names_to = "method", values_to = "auc") |>
     drop_na(auc) |>
-    mutate(ontology = factor(ontology, levels = c("MF", "BP", "CC"))) |>
-    ggplot(aes(x = auc, fill = method, color = method)) +
-    geom_density(alpha = 0.45, linewidth = 0.6) +
+    mutate(
+      ontology = factor(ontology, levels = c("MF", "BP", "CC")),
+      method   = factor(method, levels = c("DeepGoSE", "CAV"))  # CAV on top
+    ) |>
+    ggplot(aes(x = auc, y = method, fill = method, color = method)) +
+    geom_density_ridges(
+      stat          = "binline",
+      bins          = 25,
+      scale         = 0.9,
+      alpha         = 0.6,
+      linewidth     = 0.4,
+      draw_baseline = FALSE
+    ) +
     facet_wrap(~ ontology, nrow = 1) +
     scale_fill_manual(values  = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR),
                       name = NULL) +
     scale_color_manual(values = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR),
                        name = NULL) +
-    scale_x_continuous(limits = c(0.4, 1)) +
+    scale_x_continuous(limits = c(0.4, 1.0)) +
     base_theme() +
     panel_border() +
-    labs(x = "AUC  (val vs. test-neg)", y = "Density")
+    labs(x = "AUC  (val vs. test-neg)", y = NULL)
 
   # ---------------------------------------------------------------------------
   # Panel B: ggridges for AUC — one row per ontology, both methods overlaid
