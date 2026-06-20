@@ -523,8 +523,14 @@ def make_rank_scatter(
     # ------------------------------------------------------------------
     # Compute per-(protein, GO term) ranks
     # ------------------------------------------------------------------
+    # Restrict to val proteins only (those whose embeddings were loaded)
+    val_pid_set = set(id_to_idx.keys())
+
     results_norm = results.copy()
     results_norm["_pid_norm"] = results_norm["protein_id"].apply(normalise_pid)
+    results_norm = results_norm[results_norm["_pid_norm"].isin(val_pid_set)].reset_index(drop=True)
+    logger.info(f"Val proteins in results: {results_norm['_pid_norm'].nunique()} proteins, "
+                f"{len(results_norm)} rows")
 
     rows = []
     for _, pair in results_norm.iterrows():
@@ -577,21 +583,29 @@ def make_rank_scatter(
     print(f"{'='*55}")
 
     # ------------------------------------------------------------------
-    # Scatter: tool rank (x) vs CAV rank (y)
+    # Density curves: distribution of rank for CAV vs tool
     # ------------------------------------------------------------------
     plt.rcParams.update(RCPARAMS)
-    fig, ax = plt.subplots(figsize=(5, 5))
+    fig, ax = plt.subplots(figsize=(5.5, 4))
 
-    ax.hexbin(rank_df["tool_rank"], rank_df["cav_rank"],
-              gridsize=40, cmap="Blues", mincnt=1, linewidths=0.2)
-    ax.plot([1, n_go], [1, n_go], "--", color="0.6", lw=1, zorder=3)
+    for ranks, label, color in [
+        (rank_df["cav_rank"].values,  "CAV",           "#1f77b4"),
+        (rank_df["tool_rank"].values, "External tool", "#d62728"),
+    ]:
+        kde = spstats.gaussian_kde(ranks, bw_method="scott")
+        x_grid = np.linspace(1, n_go, 500)
+        density = kde(x_grid)
+        ax.plot(x_grid, density, lw=2, label=label, color=color)
+        ax.fill_between(x_grid, density, alpha=0.18, color=color)
 
-    ax.set_xlabel("External tool: rank of true GO term")
-    ax.set_ylabel("CAV: rank of true GO term")
+    ax.set_xlabel("Rank of true GO term  (rank 1 = top score)")
+    ax.set_ylabel("Density")
     ax.set_title(
-        f"Per-protein GO term specificity\n"
-        f"({n_pairs} pairs, {n_go} GO terms  |  rank 1 = top score)"
+        f"GO term specificity rank distribution\n"
+        f"({n_pairs} val protein–GO pairs, {n_go} GO terms)"
     )
+    ax.legend()
+    # Annotate rank=1 percentages
     ax.text(
         0.97, 0.97,
         f"CAV rank=1:  {pct_cav1:.1f}%\nTool rank=1: {pct_tool1:.1f}%",
@@ -599,7 +613,7 @@ def make_rank_scatter(
         bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="0.8", alpha=0.8),
     )
     fig.tight_layout()
-    p = out_dir / "fig_specificity_rank_scatter.pdf"
+    p = out_dir / "fig_specificity_rank_density.pdf"
     fig.savefig(p)
     plt.close(fig)
     logger.info(f"Saved {p}")
