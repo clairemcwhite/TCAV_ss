@@ -976,30 +976,42 @@ def make_figures(
     # 14.  Density plots: CAV score and LLR for positives vs negatives
     # ------------------------------------------------------------------
     if pool_pos_cav is not None and len(pool_pos_cav) > 0 and len(pool_neg_cav) > 0:
-        for pos_vals, neg_vals, xlabel, fname in [
+        for pos_vals, neg_vals, xlabel, fname, use_symlog in [
             (pool_pos_cav, pool_neg_cav,
-             "CAV score",
-             "fig_density_cav_score_pos_neg.pdf"),
+             "CAV score", "fig_density_cav_score_pos_neg.pdf", False),
             (pool_pos_llr, pool_neg_llr,
-             "Log-likelihood ratio (LLR)",
-             "fig_density_llr_pos_neg.pdf"),
+             "Log-likelihood ratio (LLR)", "fig_density_llr_pos_neg.pdf", True),
         ]:
             if len(pos_vals) == 0 or len(neg_vals) == 0:
                 continue
+
+            all_vals = np.concatenate([pos_vals, neg_vals])
+            if use_symlog:
+                linthresh = max(1.0, float(np.percentile(np.abs(all_vals[all_vals != 0]), 10)))
+                lo = -float(np.percentile(np.abs(pos_vals), 99))
+                hi =  float(np.percentile(np.abs(pos_vals), 99))
+            else:
+                linthresh = None
+                lo = float(np.percentile(all_vals, 1))
+                hi = float(np.percentile(all_vals, 99))
+
             fig, ax = plt.subplots(figsize=(6, 4))
             for vals, label, color in [
                 (pos_vals, f"Positives  (n={len(pos_vals):,})", "#2166ac"),
                 (neg_vals, f"Negatives  (n={len(neg_vals):,})", "#d6604d"),
             ]:
-                lo = np.percentile(vals, 1)
-                hi = np.percentile(vals, 99)
                 x_grid = np.linspace(lo, hi, 400)
-                kde    = spstats.gaussian_kde(vals, bw_method="scott")
+                # clip vals to grid range for KDE stability
+                v_clip = np.clip(vals, lo, hi)
+                kde    = spstats.gaussian_kde(v_clip, bw_method="scott")
                 y_kde  = kde(x_grid)
                 ax.plot(x_grid, y_kde, lw=2, color=color, label=label)
                 ax.fill_between(x_grid, y_kde, alpha=0.2, color=color)
                 ax.axvline(float(np.median(vals)), lw=1, ls="--", color=color)
+
             ax.axvline(0, color="0.5", lw=0.8, ls=":", zorder=0)
+            if use_symlog:
+                ax.set_xscale("symlog", linthresh=linthresh)
             ax.set_xlabel(xlabel)
             ax.set_ylabel("Density")
             ax.set_title(f"Pooled {xlabel} distribution\n(across all GO terms)")
