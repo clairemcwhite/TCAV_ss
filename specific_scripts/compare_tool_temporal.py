@@ -554,12 +554,13 @@ def make_rank_scatter(
         tool_rank       = int((tool_scores_all > true_tool_score).sum()) + 1
 
         rows.append({
-            "protein_id":    pid,
-            "go_term":       go_id,
-            "cav_rank":      cav_rank,
-            "tool_rank":     tool_rank,
+            "protein_id":     pid,
+            "go_term":        go_id,
+            "cav_rank":       cav_rank,
+            "tool_rank":      tool_rank,
             "tool_predicted": true_tool_score > 0,
-            "n_go_terms":    n_go,
+            "llr":            float(pair.get("llr", np.nan)),
+            "n_go_terms":     n_go,
         })
 
     if not rows:
@@ -601,10 +602,23 @@ def make_rank_scatter(
 
     fig, (ax_cav, ax_tool) = plt.subplots(2, 1, figsize=(7, 6), sharex=False)
 
-    # --- top: CAV ---
-    ax_cav.bar(np.arange(1, n_go + 1),
-               np.bincount(cav_ranks, minlength=n_go + 1)[1:n_go + 1] / n_total,
-               width=1.0, color="#1f77b4", alpha=0.75, edgecolor="none")
+    # --- top: CAV, colored by LLR > 0 (green) vs LLR <= 0 (red) ---
+    llr_vals  = rank_df["llr"].values
+    pos_llr   = llr_vals > 0
+    neg_llr   = ~pos_llr  # includes NaN (treated as <= 0)
+
+    ranks_pos = cav_ranks[pos_llr]
+    ranks_neg = cav_ranks[neg_llr]
+
+    counts_pos = np.bincount(ranks_pos, minlength=n_go + 1)[1:n_go + 1] / n_total
+    counts_neg = np.bincount(ranks_neg, minlength=n_go + 1)[1:n_go + 1] / n_total
+    x_bins = np.arange(1, n_go + 1)
+
+    ax_cav.bar(x_bins, counts_neg, width=1.0, color="#d62728", alpha=0.75,
+               edgecolor="none", label="LLR ≤ 0")
+    ax_cav.bar(x_bins, counts_pos, width=1.0, color="#2ca02c", alpha=0.75,
+               edgecolor="none", bottom=counts_neg, label="LLR > 0")
+
     ax_cav.set_ylabel("Proportion")
     ax_cav.set_title(
         f"GO term specificity rank distribution\n"
@@ -615,7 +629,7 @@ def make_rank_scatter(
                 transform=ax_cav.transAxes, ha="right", va="top", fontsize=8,
                 bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="0.8", alpha=0.8))
     ax_cav.set_xlim(0, not_pred_x + 1.5)
-    ax_cav.legend(["CAV"], loc="upper right", fontsize=8)
+    ax_cav.legend(loc="upper right", fontsize=8)
 
     # --- bottom: external tool ---
     tool_counts = np.bincount(tool_ranks_pred, minlength=n_go + 1)[1:n_go + 1] / n_total
