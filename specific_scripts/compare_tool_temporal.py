@@ -572,6 +572,23 @@ def make_rank_scatter(
     rank_df.to_csv(rank_file, sep="\t", index=False)
     logger.info(f"Saved rank table: {rank_file}")
 
+    # Sanity check: for "not predicted" pairs, do those proteins have ANY tool predictions?
+    not_pred = rank_df[~rank_df["tool_predicted"]]
+    if len(not_pred) > 0:
+        tool_proteins = set(tool_long["protein_id"].unique())
+        n_with_any    = not_pred["protein_id"].isin(tool_proteins).sum()
+        n_total_np    = len(not_pred)
+        n_proteins_np = not_pred["protein_id"].nunique()
+        print(f"\n{'='*55}")
+        print(f"Sanity check — 'not predicted' pairs: {n_total_np} pairs, {n_proteins_np} unique proteins")
+        print(f"  Of those proteins, {n_with_any}/{n_total_np} pairs belong to proteins")
+        print(f"  that DO have at least one tool prediction (for any GO term).")
+        print(f"  => tool is silent on specific GO term but active on protein: "
+              f"{n_with_any} ({100*n_with_any/n_total_np:.1f}%)")
+        print(f"  => tool makes no predictions for protein at all:             "
+              f"{n_total_np - n_with_any} ({100*(n_total_np-n_with_any)/n_total_np:.1f}%)")
+        print(f"{'='*55}")
+
     # Summary
     n_pairs = len(rank_df)
     pct_cav1  = (rank_df["cav_rank"]  == 1).mean() * 100
