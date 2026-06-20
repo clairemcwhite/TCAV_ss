@@ -554,11 +554,12 @@ def make_rank_scatter(
         tool_rank       = int((tool_scores_all > true_tool_score).sum()) + 1
 
         rows.append({
-            "protein_id": pid,
-            "go_term":    go_id,
-            "cav_rank":   cav_rank,
-            "tool_rank":  tool_rank,
-            "n_go_terms": n_go,
+            "protein_id":    pid,
+            "go_term":       go_id,
+            "cav_rank":      cav_rank,
+            "tool_rank":     tool_rank,
+            "tool_predicted": true_tool_score > 0,
+            "n_go_terms":    n_go,
         })
 
     if not rows:
@@ -586,20 +587,43 @@ def make_rank_scatter(
     # Density curves: distribution of rank for CAV vs tool
     # ------------------------------------------------------------------
     plt.rcParams.update(RCPARAMS)
-    fig, ax = plt.subplots(figsize=(5.5, 4))
+    n_total   = len(rank_df)
+    predicted = rank_df["tool_predicted"].values
 
-    for ranks, label, color in [
-        (rank_df["cav_rank"].values,  "CAV",           "#1f77b4"),
-        (rank_df["tool_rank"].values, "External tool", "#d62728"),
-    ]:
-        kde = spstats.gaussian_kde(ranks, bw_method="scott")
-        x_grid = np.linspace(1, n_go, 500)
-        density = kde(x_grid)
-        ax.plot(x_grid, density, lw=2, label=label, color=color)
-        ax.fill_between(x_grid, density, alpha=0.18, color=color)
+    cav_ranks        = rank_df["cav_rank"].values
+    tool_ranks_pred  = rank_df.loc[predicted,  "tool_rank"].values
+    n_not_predicted  = (~predicted).sum()
+
+    # Shared bins over 1..n_go, plus one extra bin for "not predicted"
+    n_bins    = min(50, n_go)
+    bin_edges = np.linspace(1, n_go + 1, n_bins + 1)
+    bin_w     = bin_edges[1] - bin_edges[0]
+    not_pred_x = bin_edges[-1] + bin_w        # x position of the extra bar
+    gap        = bin_w * 0.5                  # visual gap before "not predicted"
+
+    fig, ax = plt.subplots(figsize=(6.5, 4))
+
+    ax.hist(cav_ranks, bins=bin_edges, weights=np.ones(n_total) / n_total,
+            label="CAV", color="#1f77b4", alpha=0.6, edgecolor="none")
+    ax.hist(tool_ranks_pred, bins=bin_edges,
+            weights=np.ones(len(tool_ranks_pred)) / n_total,
+            label="External tool (predicted)", color="#d62728", alpha=0.6, edgecolor="none")
+
+    # "Not predicted" bar for tool, separated by a gap
+    ax.bar(not_pred_x + gap, n_not_predicted / n_total, width=bin_w,
+           color="#d62728", alpha=0.6, edgecolor="none", label="External tool (not predicted)")
+
+    # Mark the gap between ranked and not-predicted regions
+    ax.axvline(bin_edges[-1] + gap * 0.5, color="0.6", lw=0.8, ls=":")
+
+    # X-axis: show rank ticks for the histogram range, then a separate label for not-predicted
+    tick_positions = np.linspace(1, n_go, 6)
+    tick_labels    = [str(int(t)) for t in tick_positions]
+    ax.set_xticks(list(tick_positions) + [not_pred_x + gap])
+    ax.set_xticklabels(tick_labels + ["Not\npred."], fontsize=8)
 
     ax.set_xlabel("Rank of true GO term  (rank 1 = top score)")
-    ax.set_ylabel("Density")
+    ax.set_ylabel("Proportion")
     ax.set_title(
         f"GO term specificity rank distribution\n"
         f"({n_pairs} val protein–GO pairs, {n_go} GO terms)"
