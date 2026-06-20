@@ -174,6 +174,8 @@ def main():
                         help="Short label for this run (e.g. 'mf', 'bp', 'cc') appended "
                              "to figure-data CSV filenames so multiple ontology runs "
                              "coexist in the same directory.")
+    parser.add_argument("--llr-threshold", type=float, default=1.0,
+                        help="LLR threshold for 'above threshold' in rank histogram (default: 1).")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -428,6 +430,7 @@ def main():
             out_dir=out_dir,
             figure_data_dir=args.figure_data_dir,
             label=args.label,
+            llr_threshold=args.llr_threshold,
         )
     else:
         logger.info("Skipping rank scatter (pass --val-pkl, --go-base-dirs, --scaler-pkl to enable)")
@@ -470,6 +473,7 @@ def make_rank_scatter(
     out_dir: Path,
     figure_data_dir: str | None = None,
     label: str | None = None,
+    llr_threshold: float = 1.0,
 ) -> None:
     """
     For each (val protein, true GO term) pair, compute:
@@ -659,7 +663,7 @@ def make_rank_scatter(
     llr_vals  = rank_df["llr"].values
     predicted = rank_df["tool_predicted"].values
 
-    above_thresh    = llr_vals > 1
+    above_thresh    = llr_vals > llr_threshold
     cav_ranks_above = rank_df.loc[above_thresh, "cav_rank"].values
     n_cav_below     = (~above_thresh).sum()
 
@@ -685,7 +689,7 @@ def make_rank_scatter(
                width=1.0, color="#1f77b4", alpha=0.35, edgecolor="none")
     ax_cav.set_ylabel("Proportion")
     ax_cav.set_xlabel("Rank of true GO term  (rank 1 = top score)")
-    ax_cav.set_title("CAV", fontsize=10)
+    ax_cav.set_title(f"CAV  (LLR > {llr_threshold})", fontsize=10)
     ax_cav.set_xlim(0, not_pred_x + 1.5)
 
     # --- right: external tool ---
