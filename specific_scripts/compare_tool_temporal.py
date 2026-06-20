@@ -403,7 +403,8 @@ def main():
         ]
         make_rank_scatter(
             results=results,
-            tool_long=tool_long,
+            tool_predictions=args.tool_predictions,
+            tool_format=args.tool_format,
             go_terms=go_terms,
             val_pkl=args.val_pkl,
             go_base_dirs=go_base_dirs,
@@ -442,7 +443,8 @@ def _scatter_base(ax, tool_auc, cav_auc):
 
 def make_rank_scatter(
     results: pd.DataFrame,
-    tool_long: pd.DataFrame,
+    tool_predictions: str,
+    tool_format: str,
     go_terms: set,
     val_pkl: str,
     go_base_dirs: list,
@@ -509,8 +511,20 @@ def make_rank_scatter(
     logger.info(f"Score matrix: {score_matrix.shape}")
 
     # ------------------------------------------------------------------
+    # Re-load tool predictions restricted to ALL CAV GO terms (not just
+    # val annotation GO terms) so rank scoring is fair across the full
+    # set of terms the model knows about.
+    # ------------------------------------------------------------------
+    cav_go_set = set(cav_go_ids)
+    logger.info(f"Re-loading tool predictions for {len(cav_go_set)} CAV GO terms")
+    if tool_format == "long_tsv":
+        tool_long = load_tool_predictions_long(tool_predictions, go_terms_needed=cav_go_set)
+    else:
+        tool_long = load_tool_predictions(tool_predictions, go_terms_needed=cav_go_set)
+    logger.info(f"Tool predictions loaded: {len(tool_long)} rows")
+
+    # ------------------------------------------------------------------
     # Tool score lookup: protein_id → {go_term: score}
-    # (tool_long already restricted to go_terms)
     # ------------------------------------------------------------------
     tool_by_protein: dict[str, dict[str, float]] = {}
     for _, row in tool_long.iterrows():
@@ -590,7 +604,7 @@ def make_rank_scatter(
         silent_proteins = not_pred[~not_pred["protein_id"].isin(tool_proteins)]["protein_id"].unique()
         if len(silent_proteins) > 0:
             preview = silent_proteins[:10]
-            print(f"\n  Preview of proteins with zero tool predictions ({len(silent_proteins)} total):")
+            print(f"\n  Preview of proteins with zero tool predictions for any CAV GO term ({len(silent_proteins)} total):")
             for pid in preview:
                 print(f"    {pid}")
             if len(silent_proteins) > 10:
@@ -664,10 +678,10 @@ def make_rank_scatter(
     ax_tool.axvline(gap_x - 0.5, color="0.6", lw=0.8, ls=":")
     ax_tool.bar(not_pred_x, n_not_predicted / n_total,
                 width=1.0, color="#d62728", alpha=0.4, edgecolor="none",
-                label="Not predicted")
+                label="True GO term not predicted")
     ax_tool.set_ylabel("Proportion")
     ax_tool.set_xlabel("Rank of true GO term  (rank 1 = top score)")
-    ax_tool.text(0.97, 0.97, f"Tool rank=1: {pct_tool1:.1f}%  |  not predicted: {n_not_predicted/n_total*100:.1f}%",
+    ax_tool.text(0.97, 0.97, f"Tool rank=1: {pct_tool1:.1f}%  |  true GO term not predicted: {n_not_predicted/n_total*100:.1f}%",
                  transform=ax_tool.transAxes, ha="right", va="top", fontsize=8,
                  bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="0.8", alpha=0.8))
     ax_tool.set_xlim(0, not_pred_x + 1.5)
