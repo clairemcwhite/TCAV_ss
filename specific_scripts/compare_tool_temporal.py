@@ -585,24 +585,7 @@ def make_figures(
     n        = len(valid)
 
     # ------------------------------------------------------------------
-    # 1. Scatter — coloured by tool recall at threshold
-    # ------------------------------------------------------------------
-    fig, ax = plt.subplots(figsize=(5, 5))
-    recall = valid["tool_recall_at_threshold"].values
-    sc = ax.scatter(tool_auc, cav_auc, c=recall, cmap="viridis",
-                    s=35, alpha=0.85, linewidths=0.4, edgecolors="k", zorder=2)
-    _scatter_base(ax, tool_auc, cav_auc)
-    cb = fig.colorbar(sc, ax=ax, fraction=0.046, pad=0.04)
-    cb.set_label("Tool recall at threshold")
-    ax.set_title(f"CAV vs tool AUC per GO term  (n={n})")
-    fig.tight_layout()
-    p = out_dir / "fig_scatter_auc_recall.pdf"
-    fig.savefig(p)
-    plt.close(fig)
-    logger.info(f"Saved {p}")
-
-    # ------------------------------------------------------------------
-    # 2. Scatter — coloured by GO depth  (skipped if depth not present)
+    # 1. Scatter — coloured by GO depth  (skipped if depth not present)
     # ------------------------------------------------------------------
     if "depth" in valid.columns and valid["depth"].notna().any():
         dv = valid.dropna(subset=["depth"])
@@ -931,7 +914,38 @@ def make_figures(
         logger.info(f"Saved {p}")
 
     # ------------------------------------------------------------------
-    # 13.  Macro-averaged precision-recall curve (CAV vs external tool)
+    # 13.  CAV score vs LLR per validation pair, coloured by tool score
+    # ------------------------------------------------------------------
+    cav_scores = merged["val_cav_score"].values.astype(float)
+    llr_vals   = merged["llr"].values.astype(float)
+    tool_vals  = merged["tool_score"].values.astype(float)
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    sc = ax.scatter(
+        cav_scores, llr_vals,
+        c=tool_vals, cmap="plasma",
+        s=16, alpha=0.7, linewidths=0, vmin=0, vmax=max(tool_vals.max(), 1e-6),
+    )
+    cb = fig.colorbar(sc, ax=ax, fraction=0.046, pad=0.04)
+    cb.set_label("Tool score")
+    ax.axvline(0, color="0.7", lw=0.8, ls="--", zorder=0)
+    ax.axhline(0, color="0.7", lw=0.8, ls="--", zorder=0)
+    ax.set_xlabel("CAV score")
+    ax.set_ylabel("Log-likelihood ratio (LLR)")
+    ax.set_title(
+        f"CAV score vs LLR  (n={len(cav_scores)} val pairs)\n"
+        f"coloured by tool score"
+    )
+    linthresh = max(1.0, float(np.percentile(np.abs(llr_vals[llr_vals != 0]), 10)))
+    ax.set_yscale("symlog", linthresh=linthresh)
+    fig.tight_layout()
+    p = out_dir / "fig_cav_score_vs_llr_tool_color.pdf"
+    fig.savefig(p)
+    plt.close(fig)
+    logger.info(f"Saved {p}")
+
+    # ------------------------------------------------------------------
+    # 14.  Macro-averaged precision-recall curve (CAV vs external tool)
     #      Only produced when pr_data_cav / pr_data_tool were collected,
     #      i.e. when the neg-score TSVs exist and have a cav_score column.
     # ------------------------------------------------------------------
