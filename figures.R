@@ -83,39 +83,55 @@ ridges_opts <- list(
 if (nrow(ont_comp) > 0) {
 
   # ---------------------------------------------------------------------------
-  # Panel A: ggridges histogram ridges, faceted by ontology (MF | BP | CC)
-  # y = method (CAV on top, DeepGoSE below); x = per-GO-term AUC
-  # stat = "binline" gives a histogram ridge rather than a KDE ridge,
-  # inspired by the per-prediction split-KDE plots in compare_tool_temporal.py
+  # Panel A: GO term specificity rank histograms, faceted by ontology
+  # For each (protein, GO term) validation pair, both methods rank the true
+  # GO term among all trained CAVs.  x = rank / n_go_terms (0 = top, 1 = last).
+  # ggridges stat = "binline" — same histogram-ridge style as the per-prediction
+  # split plots in compare_tool_temporal.py.
   # ---------------------------------------------------------------------------
-  p_2a <- ont_comp |>
-    select(ontology, go_term,
-           CAV      = auc_val_vs_test_neg,
-           DeepGoSE = tool_auc) |>
-    pivot_longer(c(CAV, DeepGoSE), names_to = "method", values_to = "auc") |>
-    drop_na(auc) |>
-    mutate(
-      ontology = factor(ontology, levels = c("MF", "BP", "CC")),
-      method   = factor(method, levels = c("DeepGoSE", "CAV"))  # CAV on top
-    ) |>
-    ggplot(aes(x = auc, y = method, fill = method, color = method)) +
-    geom_density_ridges(
-      stat          = "binline",
-      bins          = 25,
-      scale         = 0.9,
-      alpha         = 0.6,
-      linewidth     = 0.4,
-      draw_baseline = FALSE
-    ) +
-    facet_wrap(~ ontology, nrow = 1) +
-    scale_fill_manual(values  = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR),
-                      name = NULL) +
-    scale_color_manual(values = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR),
-                       name = NULL) +
-    scale_x_continuous(limits = c(0.4, 1.0)) +
-    base_theme() +
-    panel_border() +
-    labs(x = "AUC  (val vs. test-neg)", y = NULL)
+  ranks_all <- bind_rows(
+    load_ont("go_specificity_ranks", "mf"),
+    load_ont("go_specificity_ranks", "bp"),
+    load_ont("go_specificity_ranks", "cc")
+  )
+
+  if (nrow(ranks_all) > 0) {
+    p_2a <- ranks_all |>
+      mutate(
+        CAV      = cav_rank  / n_go_terms,
+        DeepGoSE = tool_rank / n_go_terms
+      ) |>
+      select(ontology, protein_id, go_term, CAV, DeepGoSE) |>
+      pivot_longer(c(CAV, DeepGoSE), names_to = "method", values_to = "pct_rank") |>
+      mutate(
+        ontology = factor(ontology, levels = c("MF", "BP", "CC")),
+        method   = factor(method, levels = c("DeepGoSE", "CAV"))  # CAV on top
+      ) |>
+      ggplot(aes(x = pct_rank, y = method, fill = method, color = method)) +
+      geom_density_ridges(
+        stat          = "binline",
+        bins          = 40,
+        scale         = 0.9,
+        alpha         = 0.6,
+        linewidth     = 0.4,
+        draw_baseline = FALSE
+      ) +
+      facet_wrap(~ ontology, nrow = 1) +
+      scale_fill_manual(values  = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR),
+                        name = NULL) +
+      scale_color_manual(values = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR),
+                         name = NULL) +
+      scale_x_continuous(
+        limits = c(0, 1),
+        labels = scales::percent_format(accuracy = 1)
+      ) +
+      base_theme() +
+      panel_border() +
+      labs(x = "Rank percentile  (lower = higher rank for true GO term)", y = NULL)
+  } else {
+    message("Skipping rank histogram: no go_specificity_ranks_*.csv files found")
+    p_2a <- NULL
+  }
 
   # ---------------------------------------------------------------------------
   # Panel B: ggridges for AUC — one row per ontology, both methods overlaid

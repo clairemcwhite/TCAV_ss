@@ -426,6 +426,8 @@ def main():
             scaler_pkl=args.scaler_pkl,
             version=args.version,
             out_dir=out_dir,
+            figure_data_dir=args.figure_data_dir,
+            label=args.label,
         )
     else:
         logger.info("Skipping rank scatter (pass --val-pkl, --go-base-dirs, --scaler-pkl to enable)")
@@ -466,6 +468,8 @@ def make_rank_scatter(
     scaler_pkl: str,
     version: str,
     out_dir: Path,
+    figure_data_dir: str | None = None,
+    label: str | None = None,
 ) -> None:
     """
     For each (val protein, true GO term) pair, compute:
@@ -600,6 +604,13 @@ def make_rank_scatter(
     rank_file = out_dir / "go_specificity_ranks.tsv"
     rank_df.to_csv(rank_file, sep="\t", index=False)
     logger.info(f"Saved rank table: {rank_file}")
+
+    if figure_data_dir:
+        fig_dir = Path(figure_data_dir)
+        fig_dir.mkdir(parents=True, exist_ok=True)
+        lsuffix = f"_{label}" if label else ""
+        rank_df.to_csv(fig_dir / f"go_specificity_ranks{lsuffix}.csv", index=False)
+        logger.info(f"Figure data: go_specificity_ranks{lsuffix}.csv → {fig_dir}")
 
     # Sanity check: for "not predicted" pairs, do those proteins have ANY tool predictions?
     not_pred = rank_df[~rank_df["tool_predicted"]]
