@@ -219,6 +219,8 @@ def main():
     rows = []
     pr_data_cav  = []   # list of (recall, precision) per GO term, for macro-avg PR
     pr_data_tool = []
+    pool_pos_cav, pool_neg_cav = [], []   # pooled CAV scores across all GO terms
+    pool_pos_llr, pool_neg_llr = [], []   # pooled LLR scores across all GO terms
 
     for go_id, grp in merged.groupby("go_term"):
         val_cav  = grp["val_cav_score"].values.astype(float)
@@ -265,6 +267,22 @@ def main():
                     # sort by ascending recall for interpolation
                     idx = np.argsort(rec)
                     store.append((rec[idx], prec[idx]))
+
+        # Collect pooled scores for density plots
+        pool_pos_cav.extend(val_cav.tolist())
+        pool_pos_llr.extend(grp["llr"].values.astype(float).tolist())
+        if len(neg_cav) > 0:
+            pool_neg_cav.extend(neg_cav.tolist())
+            row0 = grp.iloc[0]
+            pos_mu    = float(row0.get("pos_mean", np.nan))
+            pos_sigma = float(row0.get("pos_std",  np.nan))
+            neg_mu    = float(row0.get("neg_mean", np.nan))
+            neg_sigma = float(row0.get("neg_std",  np.nan))
+            if all(np.isfinite([pos_mu, pos_sigma, neg_mu, neg_sigma])) \
+                    and pos_sigma > 0 and neg_sigma > 0:
+                llr_neg = (spstats.norm.logpdf(neg_cav, pos_mu, pos_sigma) -
+                           spstats.norm.logpdf(neg_cav, neg_mu, neg_sigma))
+                pool_neg_llr.extend(llr_neg.tolist())
 
         rows.append({
             "go_term":                      go_id,
@@ -345,7 +363,13 @@ def main():
     print(f"\n--- GO terms where tool most outperforms CAV ---")
     print(compare.nsmallest(10, "auc_diff_cav_minus_tool")[display].to_string(index=False))
 
-    make_figures(compare, merged, out_dir, pr_data_cav, pr_data_tool)
+    make_figures(
+        compare, merged, out_dir, pr_data_cav, pr_data_tool,
+        pool_pos_cav=np.array(pool_pos_cav),
+        pool_neg_cav=np.array(pool_neg_cav),
+        pool_pos_llr=np.array(pool_pos_llr),
+        pool_neg_llr=np.array(pool_neg_llr),
+    )
 
     # ------------------------------------------------------------------
     # Per-protein rank scatter (optional — requires val embeddings + GO dirs)
@@ -576,6 +600,10 @@ def make_figures(
     out_dir: Path,
     pr_data_cav: list | None = None,
     pr_data_tool: list | None = None,
+    pool_pos_cav: np.ndarray | None = None,
+    pool_neg_cav: np.ndarray | None = None,
+    pool_pos_llr: np.ndarray | None = None,
+    pool_neg_llr: np.ndarray | None = None,
 ) -> None:
     plt.rcParams.update(RCPARAMS)
 
@@ -945,7 +973,46 @@ def make_figures(
     logger.info(f"Saved {p}")
 
     # ------------------------------------------------------------------
-    # 14.  Macro-averaged precision-recall curve (CAV vs external tool)
+    # 14.  Density plots: CAV score and LLR for positives vs negatives
+    # ------------------------------------------------------------------
+    if pool_pos_cav is not None and len(pool_pos_cav) > 0 and len(pool_neg_cav) > 0:
+        for pos_vals, neg_vals, xlabel, fname in [
+            (pool_pos_cav, pool_neg_cav,
+             "CAV score",
+             "fig_density_cav_score_pos_neg.pdf"),
+            (pool_pos_llr, pool_neg_llr,
+             "Log-likelihood ratio (LLR)",
+             "fig_density_llr_pos_neg.pdf"),
+        ]:
+            if len(pos_vals) == 0 or len(neg_vals) == 0:
+                continue
+            fig, ax = plt.subplots(figsize=(6, 4))
+            for vals, label, color in [
+                (pos_vals, f"Positives  (n={len(pos_vals):,})", "#2166ac"),
+                (neg_vals, f"Negatives  (n={len(neg_vals):,})", "#d6604d"),
+            ]:
+                lo = np.percentile(vals, 1)
+                hi = np.percentile(vals, 99)
+                x_grid = np.linspace(lo, hi, 400)
+                kde    = spstats.gaussian_kde(vals, bw_method="scott")
+                y_kde  = kde(x_grid)
+                ax.plot(x_grid, y_kde, lw=2, color=color, label=label)
+                ax.fill_between(x_grid, y_kde, alpha=0.2, color=color)
+                ax.axvline(float(np.median(vals)), lw=1, ls="--", color=color)
+            ax.axvline(0, color="0.5", lw=0.8, ls=":", zorder=0)
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel("Density")
+            ax.set_title(f"Pooled {xlabel} distribution\n(across all GO terms)")
+            ax.legend(frameon=False)
+            ax.set_ylim(bottom=0)
+            fig.tight_layout()
+            p = out_dir / fname
+            fig.savefig(p)
+            plt.close(fig)
+            logger.info(f"Saved {p}")
+
+    # ------------------------------------------------------------------
+    # 15.  Macro-averaged precision-recall curve (CAV vs external tool)
     #      Only produced when pr_data_cav / pr_data_tool were collected,
     #      i.e. when the neg-score TSVs exist and have a cav_score column.
     # ------------------------------------------------------------------
