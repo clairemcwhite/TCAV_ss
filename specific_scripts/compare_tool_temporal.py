@@ -604,8 +604,8 @@ def make_rank_scatter(
 
     # --- top: CAV, colored by LLR > 0 (green) vs LLR <= 0 (red) ---
     llr_vals  = rank_df["llr"].values
-    pos_llr   = llr_vals > 0
-    neg_llr   = ~pos_llr  # includes NaN (treated as <= 0)
+    pos_llr   = llr_vals > 1
+    neg_llr   = ~pos_llr  # includes NaN (treated as <= 1)
 
     ranks_pos = cav_ranks[pos_llr]
     ranks_neg = cav_ranks[neg_llr]
@@ -615,9 +615,9 @@ def make_rank_scatter(
     x_bins = np.arange(1, n_go + 1)
 
     ax_cav.bar(x_bins, counts_neg, width=1.0, color="#d62728", alpha=0.75,
-               edgecolor="none", label="LLR ≤ 0")
+               edgecolor="none", label="LLR ≤ 1")
     ax_cav.bar(x_bins, counts_pos, width=1.0, color="#2ca02c", alpha=0.75,
-               edgecolor="none", bottom=counts_neg, label="LLR > 0")
+               edgecolor="none", bottom=counts_neg, label="LLR > 1")
 
     ax_cav.set_ylabel("Proportion")
     ax_cav.set_title(
