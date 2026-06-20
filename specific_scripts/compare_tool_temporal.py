@@ -159,6 +159,15 @@ def main():
                         help="Directory containing {go_id}_test_neg_scores.tsv files.")
     parser.add_argument("--output", required=True,
                         help="Output TSV path for per-term comparison table.")
+    # Optional — needed only for the per-protein rank scatter figure
+    parser.add_argument("--val-pkl", default=None,
+                        help="PKL of val protein embeddings (enables rank scatter).")
+    parser.add_argument("--go-base-dirs", nargs="+", default=None,
+                        help="Base dirs containing GO_XXXXXXX subdirs (glob patterns ok).")
+    parser.add_argument("--scaler-pkl", default=None,
+                        help="Shared reference population scaler pkl.")
+    parser.add_argument("--version", default="v1",
+                        help="CAV artifact version suffix (default: v1).")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -260,7 +269,7 @@ def main():
         rows.append({
             "go_term":                      go_id,
             "n_val_proteins":               len(grp),
-            "tool_auc_0fill_neg":           tool_auc,
+            "tool_auc":           tool_auc,
             "tool_recall_at_threshold":     recall,
             "tool_n_val_nonzero":           n_nonzero,
             "spearman_r_cav_vs_tool":       r_term,
@@ -276,7 +285,7 @@ def main():
         on="go_term", how="left",
     )
     compare["auc_diff_cav_minus_tool"] = (
-        compare["auc_val_vs_test_neg"] - compare["tool_auc_0fill_neg"]
+        compare["auc_val_vs_test_neg"] - compare["tool_auc"]
     )
 
     compare.sort_values("auc_val_vs_test_neg", ascending=False, inplace=True)
@@ -286,11 +295,11 @@ def main():
     # ------------------------------------------------------------------
     # Print global summary
     # ------------------------------------------------------------------
-    valid = compare.dropna(subset=["auc_val_vs_test_neg", "tool_auc_0fill_neg"])
+    valid = compare.dropna(subset=["auc_val_vs_test_neg", "tool_auc"])
     n = len(valid)
 
     cav_macro  = float(valid["auc_val_vs_test_neg"].mean())
-    tool_macro = float(valid["tool_auc_0fill_neg"].mean())
+    tool_macro = float(valid["tool_auc"].mean())
     mean_diff  = float(valid["auc_diff_cav_minus_tool"].mean())
     n_cav_wins  = int((valid["auc_diff_cav_minus_tool"] > 0).sum())
     n_tool_wins = int((valid["auc_diff_cav_minus_tool"] < 0).sum())
@@ -306,7 +315,7 @@ def main():
     print(f"  Tool recall at threshold          : {overall_recall:.1%}  "
           f"(val pairs with tool score > 0)")
 
-    print(f"\n--- AUC comparison (test negatives scored 0 for tool) ---")
+    print(f"\n--- AUC comparison ---")
     print(f"  Macro-AUC  CAV                    : {cav_macro:.3f}")
     print(f"  Macro-AUC  tool (0-fill negs)     : {tool_macro:.3f}")
     print(f"  Mean AUC diff (CAV − tool)        : {mean_diff:+.3f}")
@@ -316,12 +325,12 @@ def main():
     print(f"\n--- CAV AUC distribution ---")
     print(valid["auc_val_vs_test_neg"].describe().to_string())
     print(f"\n--- Tool AUC distribution ---")
-    print(valid["tool_auc_0fill_neg"].describe().to_string())
+    print(valid["tool_auc"].describe().to_string())
 
     # Display columns for tables — only keep those present in the merged DataFrame
     wanted = (
         ["go_term", "go_term_name", "n_val_proteins",
-         "auc_val_vs_test_neg", "tool_auc_0fill_neg",
+         "auc_val_vs_test_neg", "tool_auc",
          "auc_diff_cav_minus_tool", "tool_recall_at_threshold",
          "spearman_r_cav_vs_tool", "depth", "n_ancestors"]
     )
@@ -337,6 +346,29 @@ def main():
     print(compare.nsmallest(10, "auc_diff_cav_minus_tool")[display].to_string(index=False))
 
     make_figures(compare, merged, out_dir, pr_data_cav, pr_data_tool)
+
+    # ------------------------------------------------------------------
+    # Per-protein rank scatter (optional — requires val embeddings + GO dirs)
+    # ------------------------------------------------------------------
+    if args.val_pkl and args.go_base_dirs and args.scaler_pkl:
+        import glob as _glob
+        go_base_dirs = [
+            Path(d)
+            for pattern in args.go_base_dirs
+            for d in sorted(_glob.glob(pattern))
+        ]
+        make_rank_scatter(
+            results=results,
+            tool_long=tool_long,
+            go_terms=go_terms,
+            val_pkl=args.val_pkl,
+            go_base_dirs=go_base_dirs,
+            scaler_pkl=args.scaler_pkl,
+            version=args.version,
+            out_dir=out_dir,
+        )
+    else:
+        logger.info("Skipping rank scatter (pass --val-pkl, --go-base-dirs, --scaler-pkl to enable)")
 
 
 # ---------------------------------------------------------------------------
@@ -360,8 +392,173 @@ def _scatter_base(ax, tool_auc, cav_auc):
     ax.set_xlim(lo, hi)
     ax.set_ylim(lo, hi)
     ax.set_aspect("equal")
-    ax.set_xlabel("Tool AUC (test negatives scored 0)")
+    ax.set_xlabel("Tool AUC")
     ax.set_ylabel("CAV AUC")
+
+
+def make_rank_scatter(
+    results: pd.DataFrame,
+    tool_long: pd.DataFrame,
+    go_terms: set,
+    val_pkl: str,
+    go_base_dirs: list,
+    scaler_pkl: str,
+    version: str,
+    out_dir: Path,
+) -> None:
+    """
+    For each (val protein, true GO term) pair, compute:
+      - CAV rank: rank of the true GO term's CAV score among all GO term CAVs
+      - Tool rank: rank of the true GO term's tool score among all GO term tool scores
+    Then plot a scatter of tool rank vs CAV rank.
+    Both rankings are restricted to the GO terms with trained CAVs.
+    """
+    import glob as _glob
+    import joblib
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent.parent / "tcav"))
+    from src.utils.data_loader import load_sequence_embeddings
+
+    CAV_SUBDIR = "random_positive_train_max1000_cav"
+
+    # ------------------------------------------------------------------
+    # Load all GO term CAV vectors (restricted to go_terms)
+    # ------------------------------------------------------------------
+    cav_vectors = []
+    cav_go_ids  = []
+    for base in go_base_dirs:
+        for go_dir in sorted(base.glob("GO_*")):
+            go_id = go_dir.name.replace("GO_", "GO:")
+            if go_id not in go_terms:
+                continue
+            cav_file = go_dir / CAV_SUBDIR / f"concept_{version}.npy"
+            if cav_file.exists():
+                cav_vectors.append(np.load(cav_file))
+                cav_go_ids.append(go_id)
+
+    if not cav_vectors:
+        logger.warning("No CAV vectors found — skipping rank scatter")
+        return
+
+    n_go = len(cav_vectors)
+    logger.info(f"Loaded {n_go} GO term CAV vectors for rank scoring")
+    cav_matrix   = np.stack(cav_vectors, axis=0)   # (n_go, dim)
+    cav_id_to_col = {gid: i for i, gid in enumerate(cav_go_ids)}
+
+    # ------------------------------------------------------------------
+    # Load val embeddings + scaler, compute score matrix
+    # ------------------------------------------------------------------
+    logger.info(f"Loading val embeddings: {val_pkl}")
+    val_embs, val_ids = load_sequence_embeddings(val_pkl)
+
+    _SKIP = {"sp", "tr", "sw", "ref"}
+    id_to_idx = {}
+    for i, sid in enumerate(val_ids):
+        id_to_idx[sid] = i
+        for part in sid.split("|"):
+            if part and part not in _SKIP:
+                id_to_idx.setdefault(part, i)
+
+    scaler = joblib.load(scaler_pkl)
+    val_preprocessed = scaler.transform(val_embs)          # (n_val, dim)
+    score_matrix     = val_preprocessed @ cav_matrix.T     # (n_val, n_go)
+    logger.info(f"Score matrix: {score_matrix.shape}")
+
+    # ------------------------------------------------------------------
+    # Tool score lookup: protein_id → {go_term: score}
+    # (tool_long already restricted to go_terms)
+    # ------------------------------------------------------------------
+    tool_by_protein: dict[str, dict[str, float]] = {}
+    for _, row in tool_long.iterrows():
+        tool_by_protein.setdefault(row["protein_id"], {})[row["go_term"]] = float(row["tool_score"])
+
+    # Pre-build array of tool scores for all go_ids in cav order (zeros where tool is silent)
+    # We'll slice per-protein from this
+    go_col_order = cav_go_ids   # same ordering as cav_matrix columns
+
+    # ------------------------------------------------------------------
+    # Compute per-(protein, GO term) ranks
+    # ------------------------------------------------------------------
+    results_norm = results.copy()
+    results_norm["_pid_norm"] = results_norm["protein_id"].apply(normalise_pid)
+
+    rows = []
+    for _, pair in results_norm.iterrows():
+        pid   = pair["_pid_norm"]
+        go_id = pair["go_term"]
+
+        idx = id_to_idx.get(pid)
+        col = cav_id_to_col.get(go_id)
+        if idx is None or col is None:
+            continue
+
+        # CAV rank
+        cav_scores      = score_matrix[idx]              # (n_go,)
+        true_cav_score  = float(cav_scores[col])
+        cav_rank        = int((cav_scores > true_cav_score).sum()) + 1
+
+        # Tool rank (fill missing with 0)
+        prot_tool = tool_by_protein.get(pid, {})
+        tool_scores_all = np.array([prot_tool.get(g, 0.0) for g in go_col_order])
+        true_tool_score = float(prot_tool.get(go_id, 0.0))
+        tool_rank       = int((tool_scores_all > true_tool_score).sum()) + 1
+
+        rows.append({
+            "protein_id": pid,
+            "go_term":    go_id,
+            "cav_rank":   cav_rank,
+            "tool_rank":  tool_rank,
+            "n_go_terms": n_go,
+        })
+
+    if not rows:
+        logger.warning("No rank data computed — skipping scatter")
+        return
+
+    rank_df = pd.DataFrame(rows)
+    rank_file = out_dir / "go_specificity_ranks.tsv"
+    rank_df.to_csv(rank_file, sep="\t", index=False)
+    logger.info(f"Saved rank table: {rank_file}")
+
+    # Summary
+    n_pairs = len(rank_df)
+    pct_cav1  = (rank_df["cav_rank"]  == 1).mean() * 100
+    pct_tool1 = (rank_df["tool_rank"] == 1).mean() * 100
+    med_cav   = rank_df["cav_rank"].median()
+    med_tool  = rank_df["tool_rank"].median()
+    print(f"\n{'='*55}")
+    print(f"GO term specificity ranks  ({n_pairs} pairs, {n_go} GO terms)")
+    print(f"  CAV  — median rank: {med_cav:.0f}  |  rank=1: {pct_cav1:.1f}%")
+    print(f"  Tool — median rank: {med_tool:.0f}  |  rank=1: {pct_tool1:.1f}%")
+    print(f"{'='*55}")
+
+    # ------------------------------------------------------------------
+    # Scatter: tool rank (x) vs CAV rank (y)
+    # ------------------------------------------------------------------
+    plt.rcParams.update(RCPARAMS)
+    fig, ax = plt.subplots(figsize=(5, 5))
+
+    ax.hexbin(rank_df["tool_rank"], rank_df["cav_rank"],
+              gridsize=40, cmap="Blues", mincnt=1, linewidths=0.2)
+    ax.plot([1, n_go], [1, n_go], "--", color="0.6", lw=1, zorder=3)
+
+    ax.set_xlabel("External tool: rank of true GO term")
+    ax.set_ylabel("CAV: rank of true GO term")
+    ax.set_title(
+        f"Per-protein GO term specificity\n"
+        f"({n_pairs} pairs, {n_go} GO terms  |  rank 1 = top score)"
+    )
+    ax.text(
+        0.97, 0.97,
+        f"CAV rank=1:  {pct_cav1:.1f}%\nTool rank=1: {pct_tool1:.1f}%",
+        transform=ax.transAxes, ha="right", va="top", fontsize=8,
+        bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="0.8", alpha=0.8),
+    )
+    fig.tight_layout()
+    p = out_dir / "fig_specificity_rank_scatter.pdf"
+    fig.savefig(p)
+    plt.close(fig)
+    logger.info(f"Saved {p}")
 
 
 def _macro_pr(pr_curves, recall_grid):
@@ -382,9 +579,9 @@ def make_figures(
 ) -> None:
     plt.rcParams.update(RCPARAMS)
 
-    valid = compare.dropna(subset=["auc_val_vs_test_neg", "tool_auc_0fill_neg"]).copy()
+    valid = compare.dropna(subset=["auc_val_vs_test_neg", "tool_auc"]).copy()
     cav_auc  = valid["auc_val_vs_test_neg"].values
-    tool_auc = valid["tool_auc_0fill_neg"].values
+    tool_auc = valid["tool_auc"].values
     n        = len(valid)
 
     # ------------------------------------------------------------------
@@ -410,10 +607,10 @@ def make_figures(
     if "depth" in valid.columns and valid["depth"].notna().any():
         dv = valid.dropna(subset=["depth"])
         fig, ax = plt.subplots(figsize=(5, 5))
-        sc = ax.scatter(dv["tool_auc_0fill_neg"], dv["auc_val_vs_test_neg"],
+        sc = ax.scatter(dv["tool_auc"], dv["auc_val_vs_test_neg"],
                         c=dv["depth"], cmap="RdYlBu_r",
                         s=35, alpha=0.85, linewidths=0.4, edgecolors="k", zorder=2)
-        _scatter_base(ax, dv["tool_auc_0fill_neg"].values, dv["auc_val_vs_test_neg"].values)
+        _scatter_base(ax, dv["tool_auc"].values, dv["auc_val_vs_test_neg"].values)
         cb = fig.colorbar(sc, ax=ax, fraction=0.046, pad=0.04)
         cb.set_label("GO term depth")
         ax.set_title(f"CAV vs tool AUC per GO term  (n={len(dv)})")
