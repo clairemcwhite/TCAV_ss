@@ -182,10 +182,11 @@ if (nrow(ont_comp) > 0) {
   # ---------------------------------------------------------------------------
   # Assemble Figure 2
   # A on top (full width); B and C side by side on bottom
-  # Legend extracted from A and placed right of B+C
+  # Legend extracted from B (always present) and placed right of B+C
   # ---------------------------------------------------------------------------
-  legend_fig2 <- get_legend(p_2a)
-  p_2a_noleg  <- p_2a + theme(legend.position = "none")
+  legend_fig2 <- get_legend(
+    p_2b + theme(legend.position = "right")
+  )
 
   bottom_row <- plot_grid(
     p_2b, p_2c, legend_fig2,
@@ -194,13 +195,18 @@ if (nrow(ont_comp) > 0) {
     rel_widths = c(1, 1, 0.2)
   )
 
-  fig2 <- plot_grid(
-    p_2a_noleg,
-    bottom_row,
-    ncol        = 1,
-    labels      = c("A", ""),
-    rel_heights = c(1, 1.3)
-  )
+  if (!is.null(p_2a)) {
+    p_2a_noleg <- p_2a + theme(legend.position = "none")
+    fig2 <- plot_grid(
+      p_2a_noleg,
+      bottom_row,
+      ncol        = 1,
+      labels      = c("A", ""),
+      rel_heights = c(1, 1.3)
+    )
+  } else {
+    fig2 <- plot_grid(bottom_row, ncol = 1, labels = c("B"))
+  }
 
   ggsave(file.path(OUT, "fig2.pdf"), fig2, width = 10, height = 8)
   message("Saved fig2.pdf")
