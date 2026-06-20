@@ -96,34 +96,60 @@ if (nrow(ont_comp) > 0) {
   )
 
   if (nrow(ranks_all) > 0) {
-    bins_n <- 40
-    rank_binned <- bind_rows(
-      ranks_all |>
-        filter(llr > 0) |>
-        mutate(method = "CAV", rank_pct = cav_rank / n_go_terms),
-      ranks_all |>
-        filter(tool_predicted == TRUE) |>
-        mutate(method = "DeepGoSE", rank_pct = tool_rank / n_go_terms)
-    ) |>
+    bins_n     <- 40
+    bar_w      <- 1 / bins_n   # 0.025
+    EXCL_X     <- 1.10         # center of the excluded bar
+    EXCL_SEP   <- 1.025        # dotted separator line position
+
+    # Denominator = all pairs per ontology (matches Python's n_total)
+    n_total_df <- ranks_all |> count(ontology, name = "n_total")
+
+    # Rank histogram bins — CAV uses llr > 0; DeepGoSE uses tool_predicted == TRUE
+    cav_bins <- ranks_all |>
+      filter(llr > 0) |>
+      mutate(bin = floor(cav_rank / n_go_terms * bins_n) / bins_n,
+             method = "CAV") |>
+      count(method, ontology, bin)
+
+    tool_bins <- ranks_all |>
+      filter(tool_predicted == TRUE) |>
+      mutate(bin = floor(tool_rank / n_go_terms * bins_n) / bins_n,
+             method = "DeepGoSE") |>
+      count(method, ontology, bin)
+
+    # Excluded bars (lighter alpha, placed after gap)
+    cav_excl <- ranks_all |>
+      filter(llr <= 0) |>
+      count(ontology) |>
+      mutate(method = "CAV",      bin = EXCL_X - 0.5 * bar_w)
+
+    tool_excl <- ranks_all |>
+      filter(!tool_predicted) |>
+      count(ontology) |>
+      mutate(method = "DeepGoSE", bin = EXCL_X - 0.5 * bar_w)
+
+    rank_binned <- bind_rows(cav_bins, tool_bins, cav_excl, tool_excl) |>
+      left_join(n_total_df, by = "ontology") |>
       mutate(
-        bin     = floor(rank_pct * bins_n) / bins_n,
-        method  = factor(method,  levels = c("CAV", "DeepGoSE")),
-        ontology = factor(ontology, levels = c("MF", "BP", "CC"))
-      ) |>
-      count(method, ontology, bin) |>
-      group_by(method, ontology) |>
-      mutate(prop = n / sum(n)) |>
-      ungroup()
+        prop      = n / n_total,
+        bar_alpha = 0.75,
+        method    = factor(method,   levels = c("CAV", "DeepGoSE")),
+        ontology  = factor(ontology, levels = c("MF", "BP", "CC"))
+      )
 
     p_2a <- rank_binned |>
-      ggplot(aes(x = bin + 0.5 / bins_n, y = prop, fill = method, color = method)) +
-      geom_col(width = 1 / bins_n, alpha = 0.75, linewidth = 0.15) +
+      ggplot(aes(x = bin + 0.5 * bar_w, y = prop,
+                 fill = method, color = method, alpha = I(bar_alpha))) +
+      geom_col(width = bar_w, linewidth = 0.15) +
+      geom_vline(xintercept = EXCL_SEP, linetype = "dotted",
+                 color = "gray50", linewidth = 0.5) +
       facet_grid(method ~ ontology, scales = "free_y") +
       scale_fill_manual(values  = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR), name = NULL) +
       scale_color_manual(values = c(CAV = CAV_COLOR, DeepGoSE = TOOL_COLOR), name = NULL) +
       scale_x_continuous(
-        limits = c(0, 1),
-        labels = scales::percent_format(accuracy = 1),
+        limits = c(0, EXCL_X + bar_w * 2),
+        breaks = c(0, 0.25, 0.50, 0.75, 1.00, EXCL_X),
+        labels = c("0%", "25%", "50%", "75%", "100%", "Excl."),
         expand = c(0, 0)
       ) +
       scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
