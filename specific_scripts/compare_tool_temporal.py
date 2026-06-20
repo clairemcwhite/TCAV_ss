@@ -590,40 +590,58 @@ def make_rank_scatter(
     n_total   = len(rank_df)
     predicted = rank_df["tool_predicted"].values
 
-    cav_ranks        = rank_df["cav_rank"].values
-    tool_ranks_pred  = rank_df.loc[predicted,  "tool_rank"].values
-    n_not_predicted  = (~predicted).sum()
+    cav_ranks       = rank_df["cav_rank"].values
+    tool_ranks_pred = rank_df.loc[predicted, "tool_rank"].values
+    n_not_predicted = (~predicted).sum()
 
-    # Shared bins over 1..n_go, plus one extra bin for "not predicted"
-    n_bins    = min(50, n_go)
-    bin_edges = np.linspace(1, n_go + 1, n_bins + 1)
-    bin_w     = bin_edges[1] - bin_edges[0]
-    not_pred_x = bin_edges[-1] + bin_w        # x position of the extra bar
-    gap        = bin_w * 0.5                  # visual gap before "not predicted"
+    # One bin per rank, plus a gap + extra bin for "not predicted"
+    bin_edges  = np.arange(1, n_go + 2)          # edges: 1,2,...,n_go+1
+    not_pred_x = n_go + 3                         # visually separated x position
+    gap_x      = n_go + 2                         # dotted line position
 
-    fig, ax = plt.subplots(figsize=(6.5, 4))
+    fig, (ax_cav, ax_tool) = plt.subplots(2, 1, figsize=(7, 6), sharex=False)
 
-    ax.hist(cav_ranks, bins=bin_edges, weights=np.ones(n_total) / n_total,
-            label="CAV", color="#1f77b4", alpha=0.6, edgecolor="none")
-    ax.hist(tool_ranks_pred, bins=bin_edges,
-            weights=np.ones(len(tool_ranks_pred)) / n_total,
-            label="External tool (predicted)", color="#d62728", alpha=0.6, edgecolor="none")
+    # --- top: CAV ---
+    ax_cav.bar(np.arange(1, n_go + 1),
+               np.bincount(cav_ranks, minlength=n_go + 1)[1:n_go + 1] / n_total,
+               width=1.0, color="#1f77b4", alpha=0.75, edgecolor="none")
+    ax_cav.set_ylabel("Proportion")
+    ax_cav.set_title(
+        f"GO term specificity rank distribution\n"
+        f"({n_total} val protein–GO pairs, {n_go} GO terms)",
+        fontsize=10,
+    )
+    ax_cav.text(0.97, 0.97, f"CAV rank=1: {pct_cav1:.1f}%",
+                transform=ax_cav.transAxes, ha="right", va="top", fontsize=8,
+                bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="0.8", alpha=0.8))
+    ax_cav.set_xlim(0, not_pred_x + 1.5)
+    ax_cav.legend(["CAV"], loc="upper right", fontsize=8)
 
-    # "Not predicted" bar for tool, separated by a gap
-    ax.bar(not_pred_x + gap, n_not_predicted / n_total, width=bin_w,
-           color="#d62728", alpha=0.6, edgecolor="none", label="External tool (not predicted)")
+    # --- bottom: external tool ---
+    tool_counts = np.bincount(tool_ranks_pred, minlength=n_go + 1)[1:n_go + 1] / n_total
+    ax_tool.bar(np.arange(1, n_go + 1), tool_counts,
+                width=1.0, color="#d62728", alpha=0.75, edgecolor="none")
+    # "Not predicted" bar, separated by a gap
+    ax_tool.axvline(gap_x - 0.5, color="0.6", lw=0.8, ls=":")
+    ax_tool.bar(not_pred_x, n_not_predicted / n_total,
+                width=1.0, color="#d62728", alpha=0.4, edgecolor="none",
+                label="Not predicted")
+    ax_tool.set_ylabel("Proportion")
+    ax_tool.set_xlabel("Rank of true GO term  (rank 1 = top score)")
+    ax_tool.text(0.97, 0.97, f"Tool rank=1: {pct_tool1:.1f}%  |  not predicted: {n_not_predicted/n_total*100:.1f}%",
+                 transform=ax_tool.transAxes, ha="right", va="top", fontsize=8,
+                 bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="0.8", alpha=0.8))
+    ax_tool.set_xlim(0, not_pred_x + 1.5)
 
-    # Mark the gap between ranked and not-predicted regions
-    ax.axvline(bin_edges[-1] + gap * 0.5, color="0.6", lw=0.8, ls=":")
+    # Shared x-ticks
+    rank_ticks = list(np.linspace(1, n_go, 6).astype(int)) + [not_pred_x]
+    rank_labels = [str(t) for t in np.linspace(1, n_go, 6).astype(int)] + ["Not\npred."]
+    for ax in (ax_cav, ax_tool):
+        ax.set_xticks(rank_ticks)
+        ax.set_xticklabels(rank_labels, fontsize=8)
+    ax_tool.legend(loc="upper center", fontsize=8)
 
-    # X-axis: show rank ticks for the histogram range, then a separate label for not-predicted
-    tick_positions = np.linspace(1, n_go, 6)
-    tick_labels    = [str(int(t)) for t in tick_positions]
-    ax.set_xticks(list(tick_positions) + [not_pred_x + gap])
-    ax.set_xticklabels(tick_labels + ["Not\npred."], fontsize=8)
-
-    ax.set_xlabel("Rank of true GO term  (rank 1 = top score)")
-    ax.set_ylabel("Proportion")
+    fig.tight_layout(h_pad=1.5)
     ax.set_title(
         f"GO term specificity rank distribution\n"
         f"({n_pairs} val protein–GO pairs, {n_go} GO terms)"
