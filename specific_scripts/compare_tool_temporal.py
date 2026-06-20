@@ -979,10 +979,10 @@ def make_figures(
         for pos_vals, neg_vals, xlabel, fname, lo, hi in [
             (pool_pos_cav, pool_neg_cav,
              "CAV score", "fig_density_cav_score_pos_neg.pdf",
-             float(np.percentile(np.concatenate([pool_pos_cav, pool_neg_cav]), 1)),
-             float(np.percentile(np.concatenate([pool_pos_cav, pool_neg_cav]), 99))),
+             float(np.percentile(np.concatenate([pool_pos_cav, pool_neg_cav]), 0.5)),
+             float(np.percentile(np.concatenate([pool_pos_cav, pool_neg_cav]), 99.5))),
             (pool_pos_llr, pool_neg_llr,
-             "Log-likelihood ratio (LLR)", "fig_density_llr_pos_neg.pdf", -10, 10),
+             "Log-likelihood ratio (LLR)", "fig_density_llr_pos_neg.pdf", -50, 50),
         ]:
             if len(pos_vals) == 0 or len(neg_vals) == 0:
                 continue
