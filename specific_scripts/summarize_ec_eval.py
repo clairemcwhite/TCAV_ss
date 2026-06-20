@@ -53,6 +53,8 @@ def main():
     parser.add_argument("--exclude", default=None,
                         help="Optional TSV with ec_number and protein_id columns to exclude "
                              "(e.g. train/val overlap pairs).")
+    parser.add_argument("--figure-data-dir", default=None,
+                        help="If provided, write figure-ready CSVs to this directory.")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -106,6 +108,13 @@ def main():
     per_term_file = out_dir / "eval_ec_per_term_summary.tsv"
     per_term.to_csv(per_term_file, sep="\t", index=False, float_format="%.4f")
     logger.info(f"Per-term summary saved to {per_term_file}")
+
+    if args.figure_data_dir:
+        fig_dir = Path(args.figure_data_dir)
+        fig_dir.mkdir(parents=True, exist_ok=True)
+        out_path = fig_dir / "ec_per_term_summary.csv"
+        per_term.to_csv(out_path, index=False, float_format="%.4f")
+        logger.info(f"Figure data written to {out_path}")
 
     # ------------------------------------------------------------------
     # Global stats

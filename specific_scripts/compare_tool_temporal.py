@@ -168,6 +168,8 @@ def main():
                         help="Shared reference population scaler pkl.")
     parser.add_argument("--version", default="v1",
                         help="CAV artifact version suffix (default: v1).")
+    parser.add_argument("--figure-data-dir", default=None,
+                        help="If provided, write figure-ready CSVs to this directory.")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -369,7 +371,22 @@ def main():
         pool_neg_cav=np.array(pool_neg_cav),
         pool_pos_llr=np.array(pool_pos_llr),
         pool_neg_llr=np.array(pool_neg_llr),
+        figure_data_dir=args.figure_data_dir,
     )
+
+    if args.figure_data_dir:
+        fig_dir = Path(args.figure_data_dir)
+        fig_dir.mkdir(parents=True, exist_ok=True)
+
+        compare.to_csv(fig_dir / "temporal_tool_comparison.csv", index=False, float_format="%.4f")
+
+        pair_cols = ["protein_id", "go_term", "val_cav_score", "llr",
+                     "tool_score", "test_pos_percentile", "test_neg_percentile"]
+        merged[[c for c in pair_cols if c in merged.columns]].to_csv(
+            fig_dir / "temporal_protein_pairs.csv", index=False, float_format="%.4f"
+        )
+
+        logger.info(f"Figure data written to {fig_dir}")
 
     # ------------------------------------------------------------------
     # Per-protein rank scatter (optional — requires val embeddings + GO dirs)
@@ -604,6 +621,7 @@ def make_figures(
     pool_neg_cav: np.ndarray | None = None,
     pool_pos_llr: np.ndarray | None = None,
     pool_neg_llr: np.ndarray | None = None,
+    figure_data_dir: str | None = None,
 ) -> None:
     plt.rcParams.update(RCPARAMS)
 
@@ -692,6 +710,36 @@ def make_figures(
     fig.savefig(p)
     plt.close(fig)
     logger.info(f"Saved {p}")
+
+    # ------------------------------------------------------------------
+    # 4b. Paired KDE — AUPR distribution for CAV vs tool
+    # ------------------------------------------------------------------
+    if pr_data_cav and pr_data_tool:
+        cav_aupr  = np.array([np.trapezoid(prec, rec) for rec, prec in pr_data_cav])
+        tool_aupr = np.array([np.trapezoid(prec, rec) for rec, prec in pr_data_tool])
+        n_pr = len(cav_aupr)
+        fig, ax = plt.subplots(figsize=(6, 4))
+        for values, label, color in [
+            (cav_aupr,  "CAV",           "#2166ac"),
+            (tool_aupr, "External tool", "#d6604d"),
+        ]:
+            kde    = spstats.gaussian_kde(values, bw_method="scott")
+            x_grid = np.linspace(0, 1.05, 300)
+            y_kde  = kde(x_grid)
+            ax.plot(x_grid, y_kde, lw=2, color=color, label=label)
+            ax.fill_between(x_grid, y_kde, alpha=0.15, color=color)
+            ax.axvline(float(np.mean(values)), lw=1.2, ls="--", color=color)
+        ax.set_xlabel("AUPR")
+        ax.set_ylabel("Density")
+        ax.set_title(f"AUPR distribution across {n_pr} GO terms")
+        ax.legend(frameon=False)
+        ax.set_xlim(0, 1.05)
+        ax.set_ylim(bottom=0)
+        fig.tight_layout()
+        p = out_dir / "fig_aupr_distributions.pdf"
+        fig.savefig(p)
+        plt.close(fig)
+        logger.info(f"Saved {p}")
 
     # ------------------------------------------------------------------
     # 5. Violin — side-by-side AUC distributions
@@ -1047,6 +1095,40 @@ def make_figures(
         fig.savefig(p)
         plt.close(fig)
         logger.info(f"Saved {p}")
+
+        if figure_data_dir:
+            fig_dir = Path(figure_data_dir)
+            fig_dir.mkdir(parents=True, exist_ok=True)
+            pd.DataFrame({
+                "recall":            recall_grid,
+                "cav_precision":     mean_cav,
+                "cav_precision_sd":  std_cav,
+                "tool_precision":    mean_tool,
+                "tool_precision_sd": std_tool,
+            }).to_csv(fig_dir / "temporal_pr_curves.csv", index=False, float_format="%.4f")
+            logger.info(f"Figure data: temporal_pr_curves.csv → {fig_dir}")
+
+    if figure_data_dir and pool_pos_cav is not None and len(pool_pos_cav) > 0:
+        fig_dir = Path(figure_data_dir)
+        fig_dir.mkdir(parents=True, exist_ok=True)
+        density_dfs = []
+        if len(pool_pos_cav):
+            density_dfs.append(pd.DataFrame({
+                "label": "positive",
+                "cav_score": pool_pos_cav,
+                "llr": pool_pos_llr if pool_pos_llr is not None and len(pool_pos_llr) == len(pool_pos_cav) else np.nan,
+            }))
+        if len(pool_neg_cav):
+            density_dfs.append(pd.DataFrame({
+                "label": "negative",
+                "cav_score": pool_neg_cav,
+                "llr": pool_neg_llr if pool_neg_llr is not None and len(pool_neg_llr) == len(pool_neg_cav) else np.nan,
+            }))
+        if density_dfs:
+            pd.concat(density_dfs, ignore_index=True).to_csv(
+                fig_dir / "temporal_pos_neg_density.csv", index=False, float_format="%.4f"
+            )
+            logger.info(f"Figure data: temporal_pos_neg_density.csv → {fig_dir}")
 
 
 if __name__ == "__main__":

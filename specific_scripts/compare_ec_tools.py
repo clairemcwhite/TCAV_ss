@@ -230,7 +230,8 @@ def add_cav_metrics(
 RCPARAMS = {"font.size": 9, "axes.labelsize": 10, "axes.titlesize": 10}
 
 
-def make_figures(summary: pd.DataFrame, detail_df: pd.DataFrame, out_dir: Path) -> None:
+def make_figures(summary: pd.DataFrame, detail_df: pd.DataFrame, out_dir: Path,
+                 figure_data_dir: str | None = None) -> None:
     plt.rcParams.update(RCPARAMS)
     from matplotlib.patches import Patch
 
@@ -324,6 +325,22 @@ def make_figures(summary: pd.DataFrame, detail_df: pd.DataFrame, out_dir: Path) 
     else:
         logger.warning("No LLR values available — skipping recall-vs-threshold figure")
 
+    # ------------------------------------------------------------------
+    # Export figure-ready CSVs
+    # ------------------------------------------------------------------
+    if figure_data_dir:
+        fig_dir = Path(figure_data_dir)
+        fig_dir.mkdir(parents=True, exist_ok=True)
+
+        summary.to_csv(fig_dir / "ec_tool_comparison_summary.csv", index=False, float_format="%.4f")
+        logger.info(f"Figure data: ec_tool_comparison_summary.csv → {fig_dir}")
+
+        if len(llr_vals) > 0:
+            pd.DataFrame({"llr_threshold": thresholds, "recall": recalls}).to_csv(
+                fig_dir / "ec_recall_vs_llr.csv", index=False, float_format="%.4f"
+            )
+            logger.info(f"Figure data: ec_recall_vs_llr.csv → {fig_dir}")
+
 
 # ---------------------------------------------------------------------------
 # Main
@@ -345,6 +362,8 @@ def main():
                              "(e.g. train/val overlap pairs).")
     parser.add_argument("--llr-threshold", type=float, default=0.0,
                         help="LLR threshold for CAV binary prediction (default: 0).")
+    parser.add_argument("--figure-data-dir", default=None,
+                        help="If provided, write figure-ready CSVs to this directory.")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -439,7 +458,7 @@ def main():
         display_cols.append("note")
     print(summary[[c for c in display_cols if c in summary.columns]].to_string(index=False))
 
-    make_figures(summary, df, out_dir)
+    make_figures(summary, df, out_dir, figure_data_dir=args.figure_data_dir)
 
 
 if __name__ == "__main__":
