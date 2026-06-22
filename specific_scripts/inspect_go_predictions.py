@@ -46,6 +46,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sklearn.metrics import roc_auc_score
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -57,6 +58,17 @@ def normalise_pid(pid: str) -> str:
     """'sp|Q15185|TEBP_HUMAN' → 'Q15185'  |  'Q15185' → 'Q15185'"""
     parts = [p for p in str(pid).split("|") if p and p not in _SKIP_PARTS]
     return parts[0] if parts else str(pid)
+
+
+def compute_auc(pos_scores: np.ndarray, neg_scores: np.ndarray) -> float:
+    """AUC of positives vs negatives; NaN if a class is empty or degenerate."""
+    if len(pos_scores) == 0 or len(neg_scores) == 0:
+        return np.nan
+    y_true  = np.concatenate([np.ones(len(pos_scores)), np.zeros(len(neg_scores))])
+    y_score = np.concatenate([pos_scores, neg_scores])
+    if y_true.sum() == 0 or y_true.sum() == len(y_true):
+        return np.nan
+    return float(roc_auc_score(y_true, y_score))
 
 
 def load_tool_long(path: str, fmt: str, go_terms_needed: set) -> dict:
@@ -126,12 +138,28 @@ def build_term_table(go_term: str, results: pd.DataFrame, out_dir: Path,
     term_tool = tool_scores.get(go_term, {})
     table["tool_score"]     = table["protein_id"].map(term_tool)
     table["tool_predicted"] = table["tool_score"].notna()
+
+    # Per-term AUC: val positives vs test negatives.
+    # CAV uses cav_score directly; tool fills missing scores with 0 (matches
+    # compare_tool_temporal.py: unpredicted proteins score 0).
+    pos = table[table["split"] == "val_pos"]
+    neg = table[table["split"] == "test_neg"]
+    cav_auc  = compute_auc(pos["cav_score"].values, neg["cav_score"].values)
+    tool_auc = compute_auc(pos["tool_score"].fillna(0.0).values,
+                           neg["tool_score"].fillna(0.0).values)
+    table["cav_auc"]  = cav_auc
+    table["tool_auc"] = tool_auc
+    table["auc_diff_cav_minus_tool"] = cav_auc - tool_auc
     return table
 
 
 def print_term(table: pd.DataFrame, go_term: str) -> None:
     print(f"\n{'='*70}")
     print(f"GO term {go_term} — prediction inspection")
+    cav_auc  = table["cav_auc"].iloc[0]
+    tool_auc = table["tool_auc"].iloc[0]
+    print(f"  CAV AUC={cav_auc:.4f}  Tool AUC={tool_auc:.4f}  "
+          f"diff(CAV-tool)={cav_auc - tool_auc:+.4f}")
     print(f"{'='*70}")
     for split_name, grp in table.groupby("split"):
         n         = len(grp)
@@ -206,9 +234,15 @@ def main():
         print(combined.groupby("split").size().to_string())
 
     if args.output:
+        # Sort GO terms by AUC difference (largest CAV advantage first), then
+        # by split and descending CAV score within each term.
+        combined["_split_order"] = combined["split"].map(
+            {"val_pos": 0, "test_pos": 1, "test_neg": 2}
+        ).fillna(3)
         combined = combined.sort_values(
-            ["go_term", "split", "cav_score"], ascending=[True, True, False]
-        ).reset_index(drop=True)
+            ["auc_diff_cav_minus_tool", "go_term", "_split_order", "cav_score"],
+            ascending=[False, True, True, False],
+        ).drop(columns="_split_order").reset_index(drop=True)
         combined.to_csv(args.output, sep="\t", index=False, float_format="%.6f")
         logger.info(f"Wrote {len(combined)} rows to {args.output}")
 
