@@ -41,7 +41,7 @@ TOOL_COLOR <- unname(oi["vermillion"])
 # ---------------------------------------------------------------------------
 # Helper: base theme
 # ---------------------------------------------------------------------------
-base_theme <- function(font_size = 11, ...) {
+base_theme <- function(font_size = 8, ...) {
   theme_cowplot(font_size = font_size, ...) +
     theme(plot.title = element_text(size = font_size, face = "plain"))
 }
@@ -241,7 +241,7 @@ if (nrow(ont_comp) > 0) {
     fig2 <- plot_grid(bottom_row, ncol = 1, labels = c("B"))
   }
 
-  ggsave(file.path(OUT, "fig2.pdf"), fig2, width = 10, height = 8)
+  ggsave(file.path(OUT, "fig2.pdf"), fig2, width = 7, height = 5.5)
   message("Saved fig2.pdf")
 
 } else {
@@ -351,7 +351,7 @@ if (file.exists(ec_summary_path)) {
       axis     = "tblr"
     )
     ggsave(file.path(OUT, "fig_ec_eval.pdf"), fig_ec,
-           width = 4.5 * length(ec_summary_panels), height = 4.5)
+           width = 3.5 * length(ec_summary_panels), height = 3.5)
     message("Saved fig_ec_eval.pdf")
   }
 }
