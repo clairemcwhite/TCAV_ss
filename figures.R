@@ -222,6 +222,7 @@ if (nrow(ont_comp) > 0) {
     p_2b, p_2c, legend_fig2,
     nrow       = 1,
     labels     = c("B", "C", ""),
+    label_size = 8,
     rel_widths = c(1, 1, 0.2)
   )
 
@@ -232,13 +233,14 @@ if (nrow(ont_comp) > 0) {
       bottom_row,
       ncol        = 1,
       labels      = c("A", ""),
+      label_size  = 8,
       rel_heights = c(1, 1.3)
     )
   } else {
-    fig2 <- plot_grid(bottom_row, ncol = 1, labels = c("B"))
+    fig2 <- plot_grid(bottom_row, ncol = 1, labels = c("B"), label_size = 8)
   }
 
-  ggsave(file.path(OUT, "fig2.pdf"), fig2, width = 7, height = 5.5)
+  ggsave(file.path(OUT, "fig2.pdf"), fig2, width = 4.7, height = 3.7)
   message("Saved fig2.pdf")
 
 } else {
@@ -341,14 +343,15 @@ if (file.exists(ec_summary_path)) {
                                list(p_ec_hist, p_ec_recall, p_ec_coverage, p_ec_llr))
   if (length(ec_summary_panels) > 0) {
     fig_ec <- plot_grid(
-      plotlist = ec_summary_panels,
-      nrow     = 1,
-      labels   = "AUTO",
-      align    = "hv",
-      axis     = "tblr"
+      plotlist   = ec_summary_panels,
+      nrow       = 1,
+      labels     = "AUTO",
+      label_size = 8,
+      align      = "hv",
+      axis       = "tblr"
     )
     ggsave(file.path(OUT, "fig_ec_eval.pdf"), fig_ec,
-           width = 3.5 * length(ec_summary_panels), height = 3.5)
+           width = 2.3 * length(ec_summary_panels), height = 2.3)
     message("Saved fig_ec_eval.pdf")
   }
 }
