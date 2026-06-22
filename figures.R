@@ -41,10 +41,7 @@ TOOL_COLOR <- unname(oi["vermillion"])
 # ---------------------------------------------------------------------------
 # Helper: base theme
 # ---------------------------------------------------------------------------
-base_theme <- function(font_size = 8, ...) {
-  theme_cowplot(font_size = font_size, ...) +
-    theme(plot.title = element_text(size = font_size, face = "plain"))
-}
+base_theme <- function(...) theme_cowplot(font_size = 8, ...)
 
 # ---------------------------------------------------------------------------
 # Helper: load a per-ontology file, return NULL if missing
