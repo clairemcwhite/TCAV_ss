@@ -351,7 +351,7 @@ if (file.exists(ec_summary_path)) {
       axis       = "tblr"
     )
     ggsave(file.path(OUT, "fig_ec_eval.pdf"), fig_ec,
-           width = 2.3 * length(ec_summary_panels), height = 2.3)
+           width = 3.0 * length(ec_summary_panels), height = 3.0)
     message("Saved fig_ec_eval.pdf")
   }
 }
